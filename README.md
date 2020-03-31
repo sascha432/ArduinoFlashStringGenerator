@@ -16,13 +16,17 @@ PROGMEM_STRING_DEF(This_is_my_text, "This is my text");
 
 If the definition is not found in the source code, the tool adds it automatically to the auto generated files.
 
+## Requirements
+
+Install pcpp with `pip install pcpp`
+
 ## Using the standalone version
 
 For this example, you can run
 
-python .\scripts\flashstringgen.py -d .\src --force --output-dir=.\src\generated
+python .\scripts\flashstringgen.py -d .\src -S '+<*> -<ignore_me.cpp>' --force --output-dir=.\src\generated
 
-It will scan all source files in .\src and create the files in .\src\generated.
+It will scan all source files in .\src, except ignore_me.cpp and create the files in .\src\generated.
 
 ### FlashStringGeneratorAuto.json
 

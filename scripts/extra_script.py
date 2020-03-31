@@ -1,10 +1,14 @@
 Import("env")
 import subprocess
+import os
+import sys
+import inspect
 
 def build_spgm(source, target, env):
+
     args = [
         'python',
-        './scripts/flashstringgen.py',
+        os.path.dirname((inspect.getfile(inspect.currentframe()))) + os.sep + 'flashstringgen.py',
         '--output-dir=./src/generated',
         '--force',
         '-d', env['PROJECT_SRC_DIR']
