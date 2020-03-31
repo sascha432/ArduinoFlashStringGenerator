@@ -6,9 +6,13 @@ import inspect
 
 def build_spgm(source, target, env):
 
+    python = env['PYTHONEXE']
+    script = os.path.dirname((inspect.getfile(inspect.currentframe()))) + os.sep + 'flashstringgen.py'
+    script = os.path.realpath(script)
+
     args = [
-        'python',
-        os.path.dirname((inspect.getfile(inspect.currentframe()))) + os.sep + 'flashstringgen.py',
+        python,
+        script,
         '--output-dir=./src/generated',
         '--force',
         '-d', env['PROJECT_SRC_DIR']
@@ -37,8 +41,18 @@ def build_spgm(source, target, env):
     args.append(dir)
 
     for filter in env['SRC_FILTER']:
-        args.append('-S')
-        args.append(filter)
+        filter = filter.split('>')
+        for item in filter:
+            item = item.strip()
+            if len(item):
+                if item[0]=='+':
+                    item = item[1:].lstrip('<')
+                    args.append('-I')
+                    args.append(item)
+                elif item[0]=='-':
+                    item = item[1:].lstrip('<')
+                    args.append('-E')
+                    args.append(item)
 
     for include in env['CPPPATH']:
         args.append('-i')
@@ -47,6 +61,7 @@ def build_spgm(source, target, env):
     if verbose:
         print(' '.join(args))
 
+    print(' '.join(args))
     subprocess.Popen(args, shell=True)
 
 env.AlwaysBuild(env.Alias("buildspgm", None, build_spgm))

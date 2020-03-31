@@ -18,6 +18,8 @@ parser.add_argument("-e", "--ext", help="Extensions to include", action='append'
 parser.add_argument("-f", "--source-file", help="Add file", action='append', default=[])
 parser.add_argument("-i", "--include-path", help="Add include path", action='append', default=[])
 parser.add_argument("-S", "--src-filter", help="Add PlatformIO src_filter", action='append', default=[])
+parser.add_argument("-I", "--src-filter-include", help="src_filter include", action='append', default=[])
+parser.add_argument("-E", "--src-filter-exclude", help="src_filter include", action='append', default=[])
 parser.add_argument("-w", "--workspace", help="PlatformIO workspace directory", default=None)
 parser.add_argument("--output-declare", help="Header for automatically created strings", default="FlashStringGeneratorAuto.h")
 parser.add_argument("--output-define", help="Source for automatically created strings", default="FlashStringGeneratorAuto.cpp")
@@ -56,10 +58,15 @@ try:
         raise RuntimeError('At least one --source_dir required')
     for filter in args.src_filter:
         fc.add_src_filter(filter, args.source_dir[0])
+    for filter in args.src_filter_include:
+        fc.add_src_filter_include(filter, args.source_dir[0])
+    for filter in args.src_filter_exclude:
+        fc.add_src_filter_exclude(filter, args.source_dir[0])
     fc.add_src_filter_exclude(args.output_declare)
     fc.add_src_filter_exclude(args.output_define)
     fc.add_src_filter_exclude(args.output_static)
     fc.add_src_filter_exclude(args.output_translate)
+
     for file in args.source_file:
         fc.add_file(file)
     for dir in args.source_dir:

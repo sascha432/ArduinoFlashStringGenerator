@@ -106,24 +106,33 @@ class FileCollector:
                 raise OSError(self.database + ": Cannot write database")
 
     # parse and add src_filter items
-    def add_src_filter(self, filter_str, workspace_dir):
+    def add_src_filter(self, filter_str, base_path):
         list = filter_str.split('>')
         error = False
         for filter in list:
             filter = filter.strip()
             if len(filter)>0 and filter[1] == '<':
-                dir = os.path.realpath(workspace_dir + os.sep + filter[2:])
+                dir = os.path.realpath(base_path + os.sep + filter[2:])
                 if filter[0]=='+':
+                    print("+"+dir)
                     self.filter['include'].append(dir)
                     continue
                 elif filter[0]=='-':
+                    print("-"+dir)
                     self.filter['exclude'].append(dir)
                     continue
                 raise RuntimeError('Invalid src_filter: ' + filter_str + ': ' + filter)
 
     # add file or directory to the source filter
-    def add_src_filter_exclude(self, dir):
+    def add_src_filter_exclude(self, dir, base_path = None):
+        if base_path!=None:
+            dir = os.path.realpath(base_path + os.sep + dir)
         self.filter['exclude'].append(dir)
+
+    def add_src_filter_include(self, dir, base_path = None):
+        if base_path!=None:
+            dir = os.path.realpath(base_path + os.sep + dir)
+        self.filter['include'].append(dir)
 
     # check if a file or directory matches the source filter
     def check_filter(self, path, is_dir):
