@@ -39,7 +39,7 @@ class Generator:
             print(filename + ': Cannot write file')
             sys.exit(1)
 
-    def write(self, filename, type):
+    def write(self, filename, type, include_file = None):
         if type=='static':
             items = self.defined
         else:
@@ -50,8 +50,9 @@ class Generator:
                 file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
                 if type=='header':
                     file.write('#pragma once\n')
-                elif type=='define':
-                    file.write('#include <FlashStringGenerator.h>\n')
+                if type=='define' or type=='header':
+                    if include_file!='' and include_file.lower()!='none':
+                        file.write('#include <' + include_file + '>\n')
                 for string in items:
                     item = items[string]
                     if (type=='static' and item['static']==True) or item['static']==False:
@@ -74,7 +75,7 @@ class Generator:
             value = item['value']
             name = value
             if not name in self.translate.keys():
-                self.translate[name] = { 'auto': self.beatify(value), 'use_counter': 0}
+                self.translate[name] = { 'use_counter': 0}
             self.translate[name]['use_counter'] = self.translate[name]['use_counter'] + 1
             if not name in self.locations.keys():
                 self.locations[name] = []
@@ -94,12 +95,16 @@ class Generator:
                     self.translate[name]['default'] = item['value']
                 self.defined[name] = item
 
-
     def update_statics(self):
-        for string in self.used:
-            static = False
-            if self.used[string]['name'] in self.defined.keys():
-                self.used[string]['static'] = True
+        for item in self.used:
+            name = self.used[item]['name']
+            if name in self.defined.keys():
+                self.used[item]['static'] = True
+            else:
+                if name in self.translate.keys():
+                    trans = self.translate[name]
+                    if not 'default' in trans.keys():
+                        trans['auto'] = self.beatify(self.used[item]['value'])
 
     def get_used(self):
         return self.used
@@ -113,6 +118,6 @@ class Generator:
             trans = self.translate[name]
             if 'default' in trans.keys():
                 return trans['default']
-            else:
+            elif 'auto' in trans.keys():
                 return trans['auto']
         return item['value']

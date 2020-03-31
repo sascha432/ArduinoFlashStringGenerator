@@ -8,6 +8,7 @@ import sys
 import os
 import argparse
 import json
+import time
 import file_collector
 import generator
 from flash_string_preprocessor import FlashStringPreprocessor
@@ -17,14 +18,14 @@ parser.add_argument("-d", "--source-dir", help="Add all files in this directory"
 parser.add_argument("-e", "--ext", help="Extensions to include", action='append', default=['.c', '.cpp', '.ino'])
 parser.add_argument("-f", "--source-file", help="Add file", action='append', default=[])
 parser.add_argument("-i", "--include-path", help="Add include path", action='append', default=[])
-parser.add_argument("-S", "--src-filter", help="Add PlatformIO src_filter", action='append', default=[])
 parser.add_argument("-I", "--src-filter-include", help="src_filter include", action='append', default=[])
-parser.add_argument("-E", "--src-filter-exclude", help="src_filter include", action='append', default=[])
+parser.add_argument("-E", "--src-filter-exclude", help="src_filter exclude", action='append', default=[])
 parser.add_argument("-w", "--workspace", help="PlatformIO workspace directory", default=None)
 parser.add_argument("--output-declare", help="Header for automatically created strings", default="FlashStringGeneratorAuto.h")
 parser.add_argument("--output-define", help="Source for automatically created strings", default="FlashStringGeneratorAuto.cpp")
 parser.add_argument("--output-static", help="Source for statically created strings", default="FlashStringGeneratorAuto.static.txt")
 parser.add_argument("--output-translate", help="Translation for name to value", default="FlashStringGeneratorAuto.json")
+parser.add_argument("--include-file", help="File included in FlashStringGeneratorAuto.h/.cpp", default="FlashStringGenerator.h")
 parser.add_argument("--database", help="Storage database file", default=".flashstringgen")
 parser.add_argument("--output-dir", help="Directory for output files", default=".")
 parser.add_argument("--force", help="Ignore modification time and file size", action="store_true", default=False)
@@ -36,6 +37,8 @@ def full_dir(dir, file):
     if dir!='':
         file = dir + os.sep + file
     return os.path.realpath(file)
+
+args.verbose = True
 
 # prepend output dir
 
@@ -56,8 +59,7 @@ try:
         parser.print_usage()
         print()
         raise RuntimeError('At least one --source_dir required')
-    for filter in args.src_filter:
-        fc.add_src_filter(filter, args.source_dir[0])
+
     for filter in args.src_filter_include:
         fc.add_src_filter_include(filter, args.source_dir[0])
     for filter in args.src_filter_exclude:
@@ -120,39 +122,47 @@ if args.verbose:
     print("Defines:")
     for define in defines:
         print(define)
-    # print("Files:")
-    # for file in files:
-    #     print(file)
+    print("Includes:")
+    for include in args.include_path:
+        print(os.path.realpath(include))
+    print("Files:")
+    for file in files:
+        print(file)
     print()
     print("Processing source files...")
 
 # check if any source file was modified and scan the modified files
 
 if fc.modified():
+    fcpp = FlashStringPreprocessor()
+    for define in defines:
+        if args.verbose:
+            print('define ' + define)
+        fcpp.define(define)
+
+    for include in args.include_path:
+        fcpp.add_path(os.path.realpath(include))
+
+    fcpp.add_ignore_include(args.output_declare)
+    fcpp.add_ignore_include(args.output_define)
+    fcpp.add_ignore_include(args.output_static)
+
+    input = ''
     for file in files:
+        # fcpp.add_path(os.path.dirname(file))
         if files[file]['state']!='-' and (args.force or files[file]['state']!=''):
             if args.verbose:
                 print(file + ' ' + fc.long_state(files[file]))
-            fcpp = FlashStringPreprocessor()
-            for define in defines:
-                fcpp.define(define)
-            for include in args.include_path:
-                fcpp.add_path(os.path.realpath(include))
-            fcpp.add_ignore_include(args.output_declare)
-            fcpp.add_ignore_include(args.output_define)
-            fcpp.add_ignore_include(args.output_static)
-
-            fcpp.add_path(os.path.dirname(file))
-
-            input = "#include \"" + os.path.basename(file) + "\""
-            fcpp.parse(input)
-            # fcpp.write(sys.stdout)
-            fcpp.find_strings()
-            generator.append_used(fcpp.get_used())
-            generator.append_defined(fcpp.get_defined())
+            input = input + "#include \"" + file + "\"\n"
         else:
             if args.verbose:
                 print("Skipping " + file + ' ' + fc.long_state(files[file]))
+
+    fcpp.parse(input)
+    # fcpp.write(sys.stdout)
+    fcpp.find_strings()
+    generator.append_used(fcpp.get_used())
+    generator.append_defined(fcpp.get_defined())
 
     # create a list of strings that have been defined in the source code
 
@@ -160,8 +170,8 @@ if fc.modified():
 
     # create the auto generated files
 
-    num = generator.write(args.output_declare, 'header')
-    generator.write(args.output_define, 'define')
+    num = generator.write(args.output_declare, 'header', args.include_file)
+    generator.write(args.output_define, 'define', args.include_file)
     generator.write(args.output_static, 'static')
 
     if args.verbose:

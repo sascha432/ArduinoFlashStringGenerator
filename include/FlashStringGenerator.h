@@ -12,4 +12,4 @@
 #define SPGM(name)                              _shared_progmem_string_##name
 #define FSPGM(name)                             reinterpret_cast<const __FlashStringHelper *>(SPGM(name))
 
-#include "generated/FlashStringGeneratorAuto.h"
+#include "./generated/FlashStringGeneratorAuto.h"

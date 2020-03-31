@@ -71,13 +71,9 @@ class FlashStringPreprocessor(Preprocessor):
     #     return super(FlashStringPreprocessor, self).on_potential_include_guard(macro)
 
     def on_error(self, file, line, msg):
-        # print("******** on_error")
-        # print(file)
-        # print(line)
-        # print(msg)
-        # return super(FlashStringPreprocessor, self).on_error(file, line, msg)
-        #raise OutputDirective(Action.IgnoreAndPassThrough)
-        return False
+        # print(file + ':' + str(line) + ': ' + msg)
+        # sys.exit(1)
+        return super(FlashStringPreprocessor, self).on_error(file, line, msg)
 
     def find_strings(self, oh=sys.stdout):
         lastlineno = 0

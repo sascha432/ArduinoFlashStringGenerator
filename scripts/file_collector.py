@@ -105,62 +105,55 @@ class FileCollector:
             except:
                 raise OSError(self.database + ": Cannot write database")
 
-    # parse and add src_filter items
-    def add_src_filter(self, filter_str, base_path):
-        list = filter_str.split('>')
-        error = False
-        for filter in list:
-            filter = filter.strip()
-            if len(filter)>0 and filter[1] == '<':
-                dir = os.path.realpath(base_path + os.sep + filter[2:])
-                if filter[0]=='+':
-                    print("+"+dir)
-                    self.filter['include'].append(dir)
-                    continue
-                elif filter[0]=='-':
-                    print("-"+dir)
-                    self.filter['exclude'].append(dir)
-                    continue
-                raise RuntimeError('Invalid src_filter: ' + filter_str + ': ' + filter)
-
-    # add file or directory to the source filter
-    def add_src_filter_exclude(self, dir, base_path = None):
-        if base_path!=None:
-            dir = os.path.realpath(base_path + os.sep + dir)
-        self.filter['exclude'].append(dir)
-
+    # add file or directory to the source exclude filter
     def add_src_filter_include(self, dir, base_path = None):
         if base_path!=None:
             dir = os.path.realpath(base_path + os.sep + dir)
         self.filter['include'].append(dir)
 
+    # add file or directory to the source include filter
+    def add_src_filter_exclude(self, dir, base_path = None):
+        if base_path!=None:
+            dir = os.path.realpath(base_path + os.sep + dir)
+        self.filter['exclude'].append(dir)
+
     # check if a file or directory matches the source filter
     def check_filter(self, path, is_dir):
+        verbose = False
         if is_dir:
             path = path.rstrip('/\\') + os.sep + '.'
-        include = False
-        # print("---" + path + " " + str(is_dir))
+        include = 0
+        if verbose:
+            print("CHECK_FILTER " + path + " is_dir: " + str(is_dir))
         for filter in self.filter['include']:
             if is_dir:
                 filter = filter.rstrip('/\\')
                 if filter[-1]!='*':
                     filter = filter + os.sep + '.'
-            # print(path + ' ex ' + filter)
+            if verbose:
+                print(path + ' include ' + filter)
             if fnmatch.fnmatch(path, filter):
-                include = True
-                # print("include")
+                include = 1
+                if verbose:
+                    print("INCLUDE")
                 break
         for filter in self.filter['exclude']:
             if is_dir:
                 filter = filter.rstrip('/\\')
                 if filter[-1]!='*':
                     filter = filter + os.sep + '.'
-            # print(path + ' ex ' + filter)
+            if verbose:
+                print(path + ' exclude ' + filter)
             if fnmatch.fnmatch(path, filter):
-                include = False
-                # print("exclude")
+                include = -1
+                if verbose:
+                    print("EXCLUDE")
                 break
-        return include
+        if verbose and include==0:
+            print("NO MATCH")
+        if include==1:
+            return True
+        return False
 
     def get_filter(self):
         return self.filter
