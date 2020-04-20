@@ -3,7 +3,7 @@
  */
 
 #include <Arduino.h>
-#include <FlashStringGenerator.h>
+#include "FlashStringGenerator.h"
 
 PROGMEM_STRING_DEF(Example1, "Example 1");
 PROGMEM_STRING_DEF(Example2, "Example 2");

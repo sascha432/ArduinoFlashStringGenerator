@@ -3,7 +3,7 @@
  */
 
 #include <Arduino.h>
-#include <FlashStringGenerator.h>
+#include "FlashStringGenerator.h"
 
 void ignore_me() {
     auto str = SPGM(ignore_me);

@@ -46,13 +46,22 @@ class Generator:
             items = self.used
         num = 0
         try:
+            dir = os.path.dirname(os.path.realpath(sys.argv[0])) + os.sep
+            template = None
+            if type=='header':
+                template = dir + '/header.h'
+            elif type=='define':
+                template = dir + '/definition.cpp'
+            if template!=None:
+                with open(template, 'rt') as file:
+                    template = file.read()
+        except:
+            template = None
+        try:
             with open(filename, 'wt') as file:
                 file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
-                if type=='header':
-                    file.write('#pragma once\n')
-                if type=='define' or type=='header':
-                    if include_file!='' and include_file.lower()!='none':
-                        file.write('#include <' + include_file + '>\n')
+                if template!=None:
+                    file.write(template)
                 for string in items:
                     item = items[string]
                     if (type=='static' and item['static']==True) or item['static']==False:

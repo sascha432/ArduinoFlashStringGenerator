@@ -25,7 +25,6 @@ parser.add_argument("--output-declare", help="Header for automatically created s
 parser.add_argument("--output-define", help="Source for automatically created strings", default="FlashStringGeneratorAuto.cpp")
 parser.add_argument("--output-static", help="Source for statically created strings", default="FlashStringGeneratorAuto.static.txt")
 parser.add_argument("--output-translate", help="Translation for name to value", default="FlashStringGeneratorAuto.json")
-parser.add_argument("--include-file", help="File included in FlashStringGeneratorAuto.h/.cpp", default="FlashStringGenerator.h")
 parser.add_argument("--database", help="Storage database file", default=".flashstringgen")
 parser.add_argument("--output-dir", help="Directory for output files", default=".")
 parser.add_argument("--force", help="Ignore modification time and file size", action="store_true", default=False)
@@ -170,8 +169,8 @@ if fc.modified():
 
     # create the auto generated files
 
-    num = generator.write(args.output_declare, 'header', args.include_file)
-    generator.write(args.output_define, 'define', args.include_file)
+    num = generator.write(args.output_declare, 'header')
+    generator.write(args.output_define, 'define')
     generator.write(args.output_static, 'static')
 
     if args.verbose:
