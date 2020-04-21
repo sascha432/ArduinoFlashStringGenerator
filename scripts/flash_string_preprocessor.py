@@ -4,15 +4,21 @@
 
 import sys
 import os
+import json
 from pcpp.preprocessor import Preprocessor, OutputDirective, Action
+from json_schema.json_differ import diff_jsons
 
 class FlashStringPreprocessor(Preprocessor):
     def __init__(self):
         super(FlashStringPreprocessor, self).__init__()
-        self.define("SPGM(name) __INTERNAL_USE_FLASH_STRING_START(#name,__INTERNAL_USE_FLASH_STRING_END)")
-        self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
+        self.define('PSTR(content) __INTERNAL_USE_PSTR_START(#content,__INTERNAL_USE_PSTR_END)')
+        self.define('SPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__INTERNAL_USE_FLASH_STRING_END,##__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END_VA_ARGS)')
+        self.define('FSPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__INTERNAL_USE_FLASH_STRING_END,##__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END_VA_ARGS)')
+        self.define('PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)')
         self.spgm_defined = []
         self.spgm_used = []
+        self.pstr = []
+        self.annotations = {}
         self.ignore_includes = []
         # self.debugout = sys.stdout
 
@@ -20,19 +26,19 @@ class FlashStringPreprocessor(Preprocessor):
         self.ignore_includes.append(include)
 
     # def on_include_not_found(self,is_system_include,curdir,includepath):
-    #     print("******** on_include_not_found")
+    #     print('******** on_include_not_found')
     #     print(is_system_include)
     #     print(curdir)
     #     print(includepath)
     #     return super(FlashStringPreprocessor, self).on_include_not_found(is_system_include,curdir,includepath)
 
     # def on_unknown_macro_in_defined_expr(self,tok):
-    #     print("******** on_unknown_macro_in_defined_expr")
+    #     print('******** on_unknown_macro_in_defined_expr')
     #     print(tok)
     #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_defined_expr(tok)
 
     # def on_unknown_macro_in_expr(self,tok):
-    #     print("********** on_unknown_macro_in_expr")
+    #     print('********** on_unknown_macro_in_expr')
     #     print(tok)
     #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_expr(tok)
 
@@ -48,7 +54,7 @@ class FlashStringPreprocessor(Preprocessor):
     def on_directive_handle(self,directive,toks,ifpassthru,precedingtoks):
         if directive.value=='define' or directive.value=='undef':
             if toks[0].type=='CPP_ID':
-                if toks[0].value=='SPGM' or toks[0].value=='PROGMEM_STRING_DEF':
+                if toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF']:
                     raise OutputDirective(Action.IgnoreAndPassThrough)
         elif directive.value=='include':
             for path in self.path:
@@ -58,7 +64,7 @@ class FlashStringPreprocessor(Preprocessor):
         return super(FlashStringPreprocessor, self).on_directive_handle(directive,toks,ifpassthru,precedingtoks)
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
-    #     print("******** on_directive_unknown")
+    #     print('******** on_directive_unknown')
     #     print(directive)
     #     print(toks)
     #     print(ifpassthru)
@@ -66,7 +72,7 @@ class FlashStringPreprocessor(Preprocessor):
     #     return super(FlashStringPreprocessor, self).on_directive_unknown(directive,toks,ifpassthru,precedingtoks)
 
     # def on_potential_include_guard(self,macro):
-    #     print("******** on_potential_include_guard")
+    #     print('******** on_potential_include_guard')
     #     print(macro)
     #     return super(FlashStringPreprocessor, self).on_potential_include_guard(macro)
 
@@ -80,8 +86,7 @@ class FlashStringPreprocessor(Preprocessor):
         lastsource = None
         done = False
         blanklines = 0
-        is_spgm = False
-        is_spgm_define = False
+        internal_define = None
         while not done:
             emitlinedirective = False
             toks = []
@@ -152,26 +157,41 @@ class FlashStringPreprocessor(Preprocessor):
             #print toks[0].lineno,
             for tok in toks:
                 if tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_START':
-                    is_spgm = True
+                    internal_define = 'define_spgm'
+                    self.last_spgm = ''
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_END':
-                    is_spgm = False
-                if is_spgm and tok.type=='CPP_STRING':
-                    self.add_spgm(tok.value[1:-1], lastlineno, lastsource)
+                    internal_define = 'define_spgm_va_args'
+                elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_END_VA_ARGS':
+                    internal_define = None
+                if internal_define=='define_spgm' and tok.type=='CPP_STRING':
+                    self.last_spgm = tok.value[1:-1]
+                    self.add_spgm(self.last_spgm, lastlineno, lastsource)
+                elif internal_define=='define_spgm_va_args' and tok.type=='CPP_STRING':
+                    self.add_annotation(self.last_spgm, tok.value, lastlineno, lastsource)
+
+                if tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_PSTR_START':
+                    internal_define = 'pstr'
+                elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_PSTR_END':
+                    internal_define = None
+                if internal_define=='pstr' and tok.type=='CPP_STRING':
+                    self.add_pstr(tok.value[1:-1], lastlineno, lastsource)
 
                 if tok.type=='CPP_ID' and tok.value=='__INTERNAL_DEFINE_FLASH_STRING_START':
-                    is_spgm_define = True
+                    internal_define = 'spgm'
                     spgm_define = {'value': ''}
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_DEFINE_FLASH_STRING_END':
-                    is_spgm_define = False
+                    internal_define = None
                     self.add_spgm_define(spgm_define, lastlineno, lastsource)
-                # if is_spgm_define:
-                #     print(tok)
-                if is_spgm_define and tok.type=='CPP_STRING':
+                if internal_define=='spgm' and tok.type=='CPP_STRING':
                     if not 'name' in spgm_define.keys():
                         spgm_define['name'] = tok.value[1:-1]
                     else:
                         spgm_define['value'] = spgm_define['value'] + tok.value[1:-1]
 
+
+    def add_pstr(self, value, line, file):
+        if value.startswith('\\"'):
+            self.pstr.append({ 'value': bytes(value[2:-2], 'utf-8').decode('unicode_escape'), 'file': file, 'line': line })
 
     def add_spgm(self, value, line, file):
         self.spgm_used.append({ 'value': value, 'file': file, 'line': line })
@@ -179,8 +199,33 @@ class FlashStringPreprocessor(Preprocessor):
     def add_spgm_define(self, define, line, file):
         self.spgm_defined.append({ 'name': define['name'], 'value': define['value'], 'file': file, 'line': line })
 
+    def parse_annotation(self, annotation):
+        if annotation.startswith('{') and annotation.endswith('}'):
+            tmp = eval(annotation)
+            if isinstance(tmp, dict):
+                return tmp
+            raise RuntimeError("Invalid annotation: '" + annotation + "'")
+        else:
+            return {'*': annotation}
+
+    def add_annotation(self, define, annotation, line, file):
+        new_annotation = self.parse_annotation(annotation[1:-1])
+        if define in self.annotations.keys():
+            item = self.annotations[define]
+            diff = diff_jsons(json.dumps(item['annotation']), json.dumps(new_annotation))
+            if diff==False:
+                raise RuntimeError('Previous definition for ' + define + ' has changed\n' + item['file'] + ':' + str(item['line']) + ' ' + str(item['annotation']) + '\n' + file + ':' + str(line) + ' ' + str(new_annotation))
+        else:
+            self.annotations[define] = {'annotation': new_annotation, 'file': file, 'line': line}
+
     def get_used(self):
         return self.spgm_used
 
     def get_defined(self):
         return self.spgm_defined
+
+    def get_pstr(self):
+        return self.pstr
+
+    def get_annotations(self):
+        return self.annotations

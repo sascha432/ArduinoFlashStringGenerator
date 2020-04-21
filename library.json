@@ -7,7 +7,7 @@
       "maintainer": true
     },
     "frameworks": "arduino",
-    "platforms": ["espressif8266", "espressif32"],
+    "platforms": ["atmelavr", "espressif8266", "espressif32"],
     "build": {
         "srcFilter": [
             "-<../src/>",

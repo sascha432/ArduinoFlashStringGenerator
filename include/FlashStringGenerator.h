@@ -4,4 +4,4 @@
 
 #pragma once
 
-#include "./generated/FlashStringGeneratorAuto.h"
+#include "../src/generated/FlashStringGeneratorAuto.h"

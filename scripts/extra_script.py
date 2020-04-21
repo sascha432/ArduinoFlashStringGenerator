@@ -23,9 +23,11 @@ def build_spgm(source, target, env):
         '--force',
         '-d', project_src_dir
     ]
+
     verbose = False
     if int(ARGUMENTS.get("PIOVERBOSE", 0)):
         verbose = True
+        args.append('--verbose')
 
     for define in env['CPPDEFINES']:
         if isinstance(define, str):

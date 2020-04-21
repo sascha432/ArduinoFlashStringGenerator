@@ -2,13 +2,14 @@
 # Author: sascha_lammers@gmx.de
 #
 
-# pip install pcpp
+# pip install pcpp json-schema-matcher
 
 import sys
 import os
 import argparse
 import json
 import time
+import operator
 import file_collector
 import generator
 from flash_string_preprocessor import FlashStringPreprocessor
@@ -28,6 +29,7 @@ parser.add_argument("--output-translate", help="Translation for name to value", 
 parser.add_argument("--database", help="Storage database file", default=".flashstringgen")
 parser.add_argument("--output-dir", help="Directory for output files", default=".")
 parser.add_argument("--force", help="Ignore modification time and file size", action="store_true", default=False)
+parser.add_argument("-L", "--localization", help="Set localization", default="en")
 parser.add_argument("-v", "--verbose", help="Verbose output", action="store_true", default=False)
 parser.add_argument("-D", "--define", help="Define macro", action='append', default=[])
 args = parser.parse_args()
@@ -37,7 +39,7 @@ def full_dir(dir, file):
         file = dir + os.sep + file
     return os.path.realpath(file)
 
-args.verbose = True
+# args.verbose = True
 
 # prepend output dir
 
@@ -47,7 +49,7 @@ args.output_static = full_dir(args.output_dir, args.output_static)
 args.output_translate = full_dir(args.output_dir, args.output_translate)
 args.database = full_dir(args.output_dir, args.database)
 
-generator = generator.Generator()
+generator = generator.Generator(localization = args.localization)
 
 # create a list of files to scan
 
@@ -105,6 +107,7 @@ for define in args.define:
 generator.read_translate(args.output_translate)
 
 if args.verbose:
+    print("--- SETTINGS ---")
     print("Extensions: " + str(args.ext))
     print("Modified: " + str(fc.modified()))
     print("Files: " + str(len(files)))
@@ -112,6 +115,7 @@ if args.verbose:
     print("Output define: " + args.output_define)
     print("Output static: " + args.output_static)
     print("Output translate: " + args.output_translate)
+    print("Localization: " + args.localization)
     print("Filter:")
     filters = fc.get_filter()
     for filter in filters['include']:
@@ -128,7 +132,7 @@ if args.verbose:
     for file in files:
         print(file)
     print()
-    print("Processing source files...")
+    print("--- PROGRESSING FILES ---")
 
 # check if any source file was modified and scan the modified files
 
@@ -159,9 +163,36 @@ if fc.modified():
 
     fcpp.parse(input)
     # fcpp.write(sys.stdout)
+    generator.add_annotations(fcpp.get_annotations())
     fcpp.find_strings()
     generator.append_used(fcpp.get_used())
-    generator.append_defined(fcpp.get_defined())
+    defined = fcpp.get_defined()
+    generator.append_defined(defined)
+
+    if args.verbose:
+        print("--- annotations ---")
+        print(fcpp.get_annotations())
+
+    pstr = fcpp.get_pstr()
+    pstr_count = {}
+    for item in pstr:
+        try:
+            pstr_count[item["value"]] = pstr_count[item["value"]] + 1
+        except:
+            pstr_count[item["value"]] = 1;
+
+    if args.verbose:
+        print("--- PSTR already defined as PROGMEM ---")
+        for item in defined:
+            if item["value"] in pstr_count.keys():
+                print(item)
+
+        pstr_count = sorted(pstr_count.items(), key=operator.itemgetter(0))
+        print("--- PSTR ---")
+        for k, v in pstr_count:
+            if v>1:
+                print(k + "=" + str(v))
+
 
     # create a list of strings that have been defined in the source code
 
@@ -174,6 +205,7 @@ if fc.modified():
     generator.write(args.output_static, 'static')
 
     if args.verbose:
+        print("--- USED STRINGS ---")
         used = generator.get_used()
         for string in used:
             item = used[string]

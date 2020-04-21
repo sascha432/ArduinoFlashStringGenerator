@@ -18,7 +18,7 @@ If the definition is not found in the source code, the tool adds it automaticall
 
 ## Requirements
 
-Install pcpp with `pip install pcpp`
+Install requirements with `pip install pcpp json-schema-matcher`
 
 ## Using the standalone version
 

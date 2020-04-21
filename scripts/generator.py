@@ -7,11 +7,13 @@ import os
 import json
 
 class Generator:
-    def __init__(self):
+    def __init__(self, localization = 'en'):
+        self.localization = localization;
         self.translate = {}
         self.defined = {}
         self.used = {}
         self.locations = {}
+        self.annotations = {}
 
     def beatify(self, name):
         name = name.replace('_', ' ')
@@ -40,23 +42,25 @@ class Generator:
             sys.exit(1)
 
     def write(self, filename, type, include_file = None):
+        print("write: " + filename)
         if type=='static':
             items = self.defined
         else:
             items = self.used
         num = 0
         try:
-            dir = os.path.dirname(os.path.realpath(sys.argv[0])) + os.sep
+            dir = os.path.dirname(os.path.realpath(sys.argv[0])) + os.sep + 'templates' + os.sep
             template = None
             if type=='header':
-                template = dir + '/header.h'
+                template = dir + 'header.h'
             elif type=='define':
-                template = dir + '/definition.cpp'
+                template = dir + 'definition.cpp'
             if template!=None:
                 with open(template, 'rt') as file:
                     template = file.read()
         except:
-            template = None
+            print("Cannot read " + template)
+            exit(1)
         try:
             with open(filename, 'wt') as file:
                 file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
@@ -97,7 +101,7 @@ class Generator:
             name = item['name']
             if name in self.defined.keys():
                 item2 = self.defined[name]
-                print("WARING: redefinition of " + name + '="' + name + '" in ' + item['file'] + ':' + str(item['line']) + ' first definition in ' + item2['file'] + ':' + str(item2['line']))
+                print("WARNING: redefinition of " + name + '="' + name + '" in ' + item['file'] + ':' + str(item['line']) + ' first definition in ' + item2['file'] + ':' + str(item2['line']))
             else:
                 item['static'] = True
                 if name in self.translate.keys():
@@ -112,6 +116,8 @@ class Generator:
             else:
                 if name in self.translate.keys():
                     trans = self.translate[name]
+                    if name in self.annotations.keys():
+                        trans['annotations'] = self.annotations[name]
                     if not 'default' in trans.keys():
                         trans['auto'] = self.beatify(self.used[item]['value'])
 
@@ -123,6 +129,14 @@ class Generator:
 
     def get_value(self, item):
         name = item['name']
+
+        if name in self.annotations.keys():
+            trans = self.annotations[name]['annotation']
+            if self.localization in trans.keys():
+                return trans[self.localization]
+            elif '*' in trans.keys():
+                return trans['*']
+
         if name in self.translate.keys():
             trans = self.translate[name]
             if 'default' in trans.keys():
@@ -130,3 +144,6 @@ class Generator:
             elif 'auto' in trans.keys():
                 return trans['auto']
         return item['value']
+
+    def add_annotations(self, annotations):
+        self.annotations = annotations
