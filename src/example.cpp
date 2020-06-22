@@ -22,6 +22,7 @@ void setup() {
 
 void loop() {
     auto example1 = SPGM(Example1);
+    Serial.print(example1);
     Serial.print(FSPGM(Example2));
     Serial.print(FSPGM(Example3, "Inline example 3"));
     Serial.print(FSPGM(Example3, "Inline example 3"));
@@ -34,7 +35,6 @@ void loop() {
     Serial.print(FSPGM(new_string, "new string lowercase"));
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
-    Serial.print(FSPGM(TEST_STRING, "Test String"));
     Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3) ));
     Serial.print(FSPGM(New_string_unused));
     char buffer[32];
