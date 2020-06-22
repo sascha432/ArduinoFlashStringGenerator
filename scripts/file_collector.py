@@ -2,7 +2,8 @@
 # Author: sascha_lammers@gmx.de
 #
 
-import os.path
+import os
+from os import path
 import json
 import time
 import sys
@@ -19,21 +20,21 @@ class FileCollector:
 
     # add all files from dir with the given extensions
     def add_dir(self, dir, extensions):
-        dir = os.path.realpath(dir)
-        if not os.path.isdir(dir):
-            raise OSError(dir + ': Not a directory')
+        dir = path.realpath(dir)
+        if not path.isdir(dir):
+            raise RuntimeError('not a directory: %s' % dir)
         for root, subdirs, files in os.walk(dir):
             if self.check_filter(root, True):
                 for file in files:
                     for ext in extensions:
                         if file.endswith(ext):
-                            self.add_file(root + os.path.sep + file)
+                            self.add_file(path.join(root, file))
 
     # add single file
     def add_file(self, file):
-        file = os.path.realpath(file)
-        if not os.path.isfile(file):
-            raise OSError(file + ': File not found')
+        file = path.realpath(file)
+        if not path.isfile(file):
+            raise RuntimeError('does not exist: %s' % file)
         if self.check_filter(file, False):
             stat = os.stat(file)
             state = ''
@@ -53,19 +54,22 @@ class FileCollector:
     # return string for state
     def long_state(self, file):
         state = file['state']
-        if state=='+':
-            return 'New'
-        elif state=='-':
-            return 'Removed'
-        elif state=='*':
-            return 'Modified'
-        return 'Not modified'
+        return state=='+' and 'New' or (state=='-' and 'Remove' or (state=='*' and 'Modified' or 'Not modified'))
+        # if state=='+':
+        #     return 'New'
+        # elif state=='-':
+        #     return 'Removed'
+        # elif state=='*':
+        #     return 'Modified'
+        # return 'Not modified'
 
     # returns true if the list of files or the files itself have been changed
+    # TODO currently disabled
     def modified(self):
-        if len(self.prev_db)!=0 or self.database==None:
-            return True
-        return self.is_modified
+        return True
+        # if len(self.prev_db)!=0 or self.database==None:
+        #     return True
+        # return self.is_modified
 
     # return files
     def list(self):
@@ -90,38 +94,38 @@ class FileCollector:
     # write database
     def write_database(self):
         if self.database:
+            results = dict(self.results)
+            removed = []
+            for file in results:
+                if results[file]['state']=='-':
+                    removed.append(file)
+                else:
+                    del results[file]['state']
+            for file in removed:
+                del results[file]
             try:
-                results = dict(self.results)
-                removed = []
-                for file in results:
-                    if results[file]['state']=='-':
-                        removed.append(file)
-                    else:
-                        del results[file]['state']
-                for file in removed:
-                    del results[file]
                 with open(self.database, 'wt') as file:
                     file.write(json.dumps(results))
-            except:
-                raise OSError(self.database + ": Cannot write database")
+            except Exception as e:
+                raise RuntimeError('cannot write database: %s: %s' % (e, self.database))
 
     # add file or directory to the source exclude filter
     def add_src_filter_include(self, dir, base_path = None):
-        if base_path!=None:
-            dir = os.path.realpath(base_path + os.sep + dir)
-        self.filter['include'].append(dir)
+        if base_path:
+            dir = path.join(base_path, dir)
+        self.filter['include'].append(path.realpath(dir))
 
     # add file or directory to the source include filter
     def add_src_filter_exclude(self, dir, base_path = None):
-        if base_path!=None:
-            dir = os.path.realpath(base_path + os.sep + dir)
-        self.filter['exclude'].append(dir)
+        if base_path:
+            dir = path.join(base_path , dir)
+        self.filter['exclude'].append(path.realpath(dir))
 
     # check if a file or directory matches the source filter
     def check_filter(self, path, is_dir):
         verbose = False
         if is_dir:
-            path = path.rstrip('/\\') + os.sep + '.'
+            path = os.path.join(path, '.')
         include = 0
         if verbose:
             print("CHECK_FILTER " + path + " is_dir: " + str(is_dir))
