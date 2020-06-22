@@ -64,7 +64,7 @@ def full_dir(dir, file):
         file = dir + os.sep + file
     return path.realpath(file)
 
-args.verbose = True
+# args.verbose = True
 
 # prepend output dir
 
@@ -175,7 +175,7 @@ if fc.modified():
     try:
         fcpp.find_strings()
     except Exception as e:
-        raise e
+        raise RuntimeError('exception: %s:%u: %s' % (fcpp.lastsource, fcpp.lastlineno, e))
 
     generator.append_used(fcpp.get_used())
     generator.append_defined(fcpp.get_defined())

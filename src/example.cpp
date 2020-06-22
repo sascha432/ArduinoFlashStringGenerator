@@ -7,7 +7,7 @@
 
 PROGMEM_STRING_DEF(Example1, "Example 1");
 PROGMEM_STRING_DEF(Example2, "Example 2");
-PROGMEM_STRING_DEF(text_html, "text/html");
+PROGMEM_STRING_DEF(mime_type_text_html, "text/html");
 PROGMEM_STRING_DEF(0, "0");
 PROGMEM_STRING_DEF(1, "1");
 PROGMEM_STRING_DEF(test_str, TEST_STRING);
@@ -26,7 +26,7 @@ void loop() {
     Serial.print(FSPGM(Example2));
     Serial.print(FSPGM(Example3, "Inline example 3"));
     Serial.print(FSPGM(Example3, "Inline example 3"));
-    Serial.print(FSPGM(text_html));
+    Serial.print(FSPGM(mime_type_text_html));
     Serial.print(FSPGM(index_html, "index.html"));
     Serial.print(FSPGM(New_string));
     Serial.print(FSPGM(New_string_2));

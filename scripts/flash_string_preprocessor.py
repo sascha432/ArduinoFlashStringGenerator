@@ -22,19 +22,19 @@ class FlashStringPreprocessor(Preprocessor):
         self.ignore_includes.append(include)
 
     # def on_include_not_found(self,is_system_include,curdir,includepath):
-    #     print("******** on_include_not_found")
+    #     print('******** on_include_not_found')
     #     print(is_system_include)
     #     print(curdir)
     #     print(includepath)
     #     return super(FlashStringPreprocessor, self).on_include_not_found(is_system_include,curdir,includepath)
 
     # def on_unknown_macro_in_defined_expr(self,tok):
-    #     print("******** on_unknown_macro_in_defined_expr")
+    #     print('******** on_unknown_macro_in_defined_expr')
     #     print(tok)
     #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_defined_expr(tok)
 
     # def on_unknown_macro_in_expr(self,tok):
-    #     print("********** on_unknown_macro_in_expr")
+    #     print('********** on_unknown_macro_in_expr')
     #     print(tok)
     #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_expr(tok)
 
@@ -53,16 +53,14 @@ class FlashStringPreprocessor(Preprocessor):
                 raise OutputDirective(Action.IgnoreAndPassThrough)
         elif directive.value=='include':
             for path in self.path:
-                #include_file = os.path.realpath(path + os.sep + self.tokens_to_string(toks))
                 include_file = os.path.realpath(os.path.join(path, self.tokens_to_string(toks)))
                 if os.path.isfile(include_file):
                     if include_file in self.ignore_includes:
-                        print("ignore %s" % include_file)
                         raise OutputDirective(Action.IgnoreAndPassThrough)
         return super(FlashStringPreprocessor, self).on_directive_handle(directive,toks,ifpassthru,precedingtoks)
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
-    #     print("******** on_directive_unknown")
+    #     print('******** on_directive_unknown')
     #     print(directive)
     #     print(toks)
     #     print(ifpassthru)
@@ -70,7 +68,7 @@ class FlashStringPreprocessor(Preprocessor):
     #     return super(FlashStringPreprocessor, self).on_directive_unknown(directive,toks,ifpassthru,precedingtoks)
 
     # def on_potential_include_guard(self,macro):
-    #     print("******** on_potential_include_guard")
+    #     print('******** on_potential_include_guard')
     #     print(macro)
     #     return super(FlashStringPreprocessor, self).on_potential_include_guard(macro)
 

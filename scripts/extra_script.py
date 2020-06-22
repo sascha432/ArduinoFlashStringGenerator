@@ -30,6 +30,11 @@ def build_spgm(source, target, env):
         '-@', args_file.name
     ]
 
+    verbose = False
+    if int(ARGUMENTS.get("PIOVERBOSE", 0)):
+        verbose = True
+        args.append('--verbose')
+
     for define in env['CPPDEFINES']:
         if isinstance(define, str):
             args_file.write('-D\n');

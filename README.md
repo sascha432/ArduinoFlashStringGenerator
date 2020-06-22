@@ -81,7 +81,7 @@ auto str = SPGM(CURRENCY, "%.2f");
 
 ## Requirements
 
-Install pcpp with `pip install pcpp`
+Install requirements with `pip install pcpp json-schema-matcher`
 
 ## Using the standalone version
 
