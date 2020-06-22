@@ -6,6 +6,7 @@
 
 import sys
 import os
+from os import path
 import argparse
 import json
 import time
@@ -13,14 +14,27 @@ import file_collector
 import generator
 from flash_string_preprocessor import FlashStringPreprocessor
 
+class ArgfileAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        extra_args = []
+        try:
+            with open(values, "rt") as file:
+                for line in file:
+                    extra_args.append(line.rstrip('\r\n'));
+        except Exception as e:
+            raise argparse.ArgumentError(self, 'cannot read: %s: %s' % (e, values))
+        if extra_args:
+            setattr(namespace, self.dest, extra_args)
+
 parser = argparse.ArgumentParser(description="FlashString Generator")
-parser.add_argument("-d", "--source-dir", help="Add all files in this directory", action='append', default=[])
+parser.add_argument("-p", "--project_dir", help="PlatformIO project directory", default=None, required=True)
+parser.add_argument("-d", "--source-dir", help="Add all files in these directories applying src_filter", action='append', default=[])
 parser.add_argument("-e", "--ext", help="Extensions to include", action='append', default=['.c', '.cpp', '.ino'])
 parser.add_argument("-f", "--source-file", help="Add file", action='append', default=[])
 parser.add_argument("-i", "--include-path", help="Add include path", action='append', default=[])
 parser.add_argument("-I", "--src-filter-include", help="src_filter include", action='append', default=[])
 parser.add_argument("-E", "--src-filter-exclude", help="src_filter exclude", action='append', default=[])
-parser.add_argument("-w", "--workspace", help="PlatformIO workspace directory", default=None)
+parser.add_argument("--i18n", help="Select language to use", default=None)
 parser.add_argument("--output-declare", help="Header for automatically created strings", default="FlashStringGeneratorAuto.h")
 parser.add_argument("--output-define", help="Source for automatically created strings", default="FlashStringGeneratorAuto.cpp")
 parser.add_argument("--output-static", help="Source for statically created strings", default="FlashStringGeneratorAuto.static.txt")
@@ -28,15 +42,27 @@ parser.add_argument("--output-translate", help="Translation for name to value", 
 parser.add_argument("--include-file", help="File included in FlashStringGeneratorAuto.h/.cpp", default="FlashStringGenerator.h")
 parser.add_argument("--database", help="Storage database file", default=".flashstringgen")
 parser.add_argument("--output-dir", help="Directory for output files", default=".")
-parser.add_argument("--force", help="Ignore modification time and file size", action="store_true", default=False)
 parser.add_argument("-v", "--verbose", help="Verbose output", action="store_true", default=False)
+parser.add_argument("-n", "--dry-run", help="Do not write any output files", action="store_true", default=False)
 parser.add_argument("-D", "--define", help="Define macro", action='append', default=[])
+parser.add_argument("-@", "--args-from-file", help="Read additional arguments from file, one argument per line", action=ArgfileAction, default=None)
+
 args = parser.parse_args()
+# second pass in case more have been read from file
+if args.args_from_file:
+    args = parser.parse_args(sys.argv[1:] + args.args_from_file)
+
+if args.i18n:
+    parser.error("--i18n: currently not supported")
+
+def verbose(msg):
+    if args.verbose:
+        print(msg)
 
 def full_dir(dir, file):
     if dir!='':
         file = dir + os.sep + file
-    return os.path.realpath(file)
+    return path.realpath(file)
 
 args.verbose = True
 
@@ -56,9 +82,7 @@ fc = file_collector.FileCollector(args.database)
 fc.read_database()
 try:
     if len(args.source_dir)==0:
-        parser.print_usage()
-        print()
-        raise RuntimeError('At least one --source_dir required')
+        parser.error('At least one --source_dir required');
 
     for filter in args.src_filter_include:
         fc.add_src_filter_include(filter, args.source_dir[0])
@@ -73,19 +97,13 @@ try:
         fc.add_file(file)
     for dir in args.source_dir:
         fc.add_dir(dir, args.ext)
-except OSError as e:
-    print(e)
-    sys.exit(1)
 except RuntimeError as e:
     print(e)
     sys.exit(1)
 
 files = fc.list()
 if len(files) == 0:
-    parser.print_usage()
-    print()
-    print("No source files found")
-    sys.exit(1)
+    parser.error("No source files found")
 
 # create defines for the preprocessor
 
@@ -113,54 +131,52 @@ if args.verbose:
     print("Output define: " + args.output_define)
     print("Output static: " + args.output_static)
     print("Output translate: " + args.output_translate)
-    print("Filter:")
     filters = fc.get_filter()
-    for filter in filters['include']:
-        print('+' + filter)
-    for filter in filters['exclude']:
-        print('-' + filter)
-    print("Defines:")
-    for define in defines:
-        print(define)
-    print("Includes:")
-    for include in args.include_path:
-        print(os.path.realpath(include))
-    print("Files:")
-    for file in files:
-        print(file)
+    print("Filter include/exclude: %u/%u" % (len(filters['include']), len(filters['exclude'])))
+    print("Defines: %u" % len(defines))
+    print("Includes: %u" % len(args.include_path))
+    print("Files: %u" % len(files))
     print()
-    print("Processing source files...")
+
+verbose("Processing files...")
 
 # check if any source file was modified and scan the modified files
 
 if fc.modified():
     fcpp = FlashStringPreprocessor()
     for define in defines:
-        if args.verbose:
-            print('define ' + define)
+        # if args.verbose:
+        #     print('define ' + define)
         fcpp.define(define)
 
     for include in args.include_path:
-        fcpp.add_path(os.path.realpath(include))
+        fcpp.add_path(path.realpath(include))
 
     fcpp.add_ignore_include(args.output_declare)
     fcpp.add_ignore_include(args.output_define)
     fcpp.add_ignore_include(args.output_static)
 
+    filters = fc.get_filter()
+    for exclude in filters['exclude']:
+        fcpp.add_ignore_include(exclude)
+
     input = ''
     for file in files:
-        # fcpp.add_path(os.path.dirname(file))
-        if files[file]['state']!='-' and (args.force or files[file]['state']!=''):
-            if args.verbose:
-                print(file + ' ' + fc.long_state(files[file]))
+        if files[file]['state']!='-':  #and (args.force or files[file]['state']!=''):
+            # if args.verbose:
+            #     print(file + ' ' + fc.long_state(files[file]))
             input = input + "#include \"" + file + "\"\n"
-        else:
-            if args.verbose:
-                print("Skipping " + file + ' ' + fc.long_state(files[file]))
+        # else:
+        #     if args.verbose:
+        #         print("Skipping " + file + ' ' + fc.long_state(files[file]))
 
     fcpp.parse(input)
     # fcpp.write(sys.stdout)
-    fcpp.find_strings()
+    try:
+        fcpp.find_strings()
+    except Exception as e:
+        raise e
+
     generator.append_used(fcpp.get_used())
     generator.append_defined(fcpp.get_defined())
 
@@ -169,10 +185,16 @@ if fc.modified():
     generator.update_statics()
 
     # create the auto generated files
+    if args.dry_run:
+        print("Dry run")
+        num = 0;
+    else:
+        num = generator.write(args.output_declare, 'header', args.include_file)
+        generator.write(args.output_define, 'define', args.include_file)
+        generator.write(args.output_static, 'static')
 
-    num = generator.write(args.output_declare, 'header', args.include_file)
-    generator.write(args.output_define, 'define', args.include_file)
-    generator.write(args.output_static, 'static')
+        generator.write_translate(args.output_translate)
+        fc.write_database()
 
     if args.verbose:
         used = generator.get_used()
@@ -180,12 +202,11 @@ if fc.modified():
             item = used[string]
             if item['static']:
                 type = 'static'
+            elif 'default' in item:
+                type = 'default'
             else:
                 type = 'auto'
             print(type + ' ' + item['name'] + '=' + generator.get_value(item))
-
-    generator.write_translate(args.output_translate)
-    fc.write_database()
 
     print(str(num) + " strings created")
 
