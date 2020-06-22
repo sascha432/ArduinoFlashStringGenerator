@@ -26,7 +26,7 @@ class ArgfileAction(argparse.Action):
         if extra_args:
             setattr(namespace, self.dest, extra_args)
 
-parser = argparse.ArgumentParser(description="FlashString Generator")
+parser = argparse.ArgumentParser(description="FlashString Generator 0.0.3")
 parser.add_argument("-p", "--project_dir", help="PlatformIO project directory", default=None, required=True)
 parser.add_argument("-d", "--source-dir", help="Add all files in these directories applying src_filter", action='append', default=[])
 parser.add_argument("-e", "--ext", help="Extensions to include", action='append', default=['.c', '.cpp', '.ino'])

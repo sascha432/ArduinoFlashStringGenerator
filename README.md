@@ -4,6 +4,14 @@ This tool can generate PROGMEM strings from source code. It is based on [pcpp](h
 
 Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Running the tool will check all source code and generate the defined flash strings.
 
+## Change Log
+
+[Change Log v0.0.3](CHANGELOG.md)
+
+## Requirements
+
+Install requirements with `pip install pcpp`
+
 ## Basic usage
 
 ### Declaring a PROGMEM string (in header files)
@@ -75,14 +83,6 @@ auto str = SPGM(CURRENCY, "%.2f");
 
 ... [example.cpp](src/example.cpp)
 
-## Change Log
-
-[Change Log v0.0.2](CHANGELOG.md)
-
-## Requirements
-
-Install requirements with `pip install pcpp json-schema-matcher`
-
 ## Using the standalone version
 
 For this example, you can run
@@ -132,6 +132,7 @@ PROGMEM_STRING_DECL(New_string_2);
 // src/example.cpp:46
 PROGMEM_STRING_DECL(New_string_3);
 ```
+
 ## Using PlatformIO and extra_scripts
 
 If using PlatformIO, you can use extra_scripts to provide a target that creates the PROGMEM strings.
@@ -148,4 +149,4 @@ Building flash strings for the provided example:
 
 After that it can be compiled and uploaded:
 
-`pio run -t upload`
+`pio run -t upload -e example`

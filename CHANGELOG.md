@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.3 (work-in-progress)
+
+- Added missing include in FlashStringGeneratorAuto.cpp
+- Fixed passing CPPDEFINES in extra_script.py
+- Adding defines for known BOARD_MCU
+- Added extern "C" to include file
+
 ## 0.0.2
 
 - Added `-@/--args-from-file` in case the command line exceeds it length limit

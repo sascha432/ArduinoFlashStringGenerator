@@ -51,10 +51,16 @@ class Generator:
             with open(filename, 'wt') as file:
                 file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
                 if type=='header':
-                    file.write('#pragma once\n')
-                if type=='define' or type=='header':
                     if include_file!='' and include_file.lower()!='none':
                         file.write('#include <' + include_file + '>\n')
+                    file.writelines([
+                        '#pragma once\n',
+                        '#ifdef __cplusplus\n',
+                        'extern "C"{\n',
+                        '#endif\n'
+                    ])
+                elif type=='define':
+                    file.write('#include "FlashStringGeneratorAuto.h"\n')
                 for string in items:
                     item = items[string]
                     if (type=='static' and item['static']==True) or item['static']==False:
@@ -67,6 +73,12 @@ class Generator:
                             file.write('PROGMEM_STRING_DECL(' + name + ');\n')
                         else:
                             file.write('PROGMEM_STRING_DEF(' + name + ', "' + self.get_value(item) + '");\n')
+                if type=="header":
+                    file.writelines([
+                        '#ifdef __cplusplus\n',
+                        '} // extern "C"\n',
+                        '#endif\n'
+                    ])
         except OSError as e:
             print(filename + ': Cannot create file')
             sys.exit(1)

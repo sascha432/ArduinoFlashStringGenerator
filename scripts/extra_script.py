@@ -17,8 +17,6 @@ def build_spgm(source, target, env):
     # use flash generatored from .. where extra_scripts.py is locatated
     script = path.realpath(path.join(path.dirname((inspect.getfile(inspect.currentframe()))), 'flashstringgen.py'))
 
-    verbose = int(ARGUMENTS.get("PIOVERBOSE", 0)) and True or False
-
     args_file = tempfile.NamedTemporaryFile('w+t', delete=False)
 
     args = [
@@ -37,11 +35,34 @@ def build_spgm(source, target, env):
 
     for define in env['CPPDEFINES']:
         if isinstance(define, str):
-            args_file.write('-D\n');
-            args_file.write(env.subst(str(define)) + '\n');
+            args_file.write('-D' + env.subst(str(define)) + '\n');
         elif isinstance(define, tuple):
-            args_file.write('-D\n');
-            args_file.write(define[0] + '=' + env.subst(str(define[1])) + '\n');
+            args_file.write('-D' + define[0] + '=' + env.subst(str(define[1])) + '\n');
+
+    args_file.write('-D__cplusplus=201103L\n');
+
+    mmcu = env.subst("$BOARD_MCU").lower()
+    if mmcu=="esp8266":
+        args_file.write('-DESP8266=1\n');
+    elif mmcu=="esp32":
+        args_file.write('-DESP32=1\n');
+    elif mmcu=="atmega328p":
+        args_file.write('-D__AVR__=1\n');
+        args_file.write('-D__AVR_ATmega328P=1\n');
+    elif mmcu=="atmega328pb":
+        args_file.write('-D__AVR__=1\n');
+        args_file.write('-D__AVR_ATmega328PB=1\n');
+    elif mmcu=="atmega48p":
+        args_file.write('-D__AVR__=1\n');
+        args_file.write('-D__AVR_ATmega48P=1\n');
+    elif mmcu=="atmega88p":
+        args_file.write('-D__AVR__=1\n');
+        args_file.write('-D__AVR_ATmega88P=1\n');
+    elif mmcu=="atmega168p":
+        args_file.write('-D__AVR__=1\n');
+        args_file.write('-D__AVR_ATmega168P=1\n');
+    else:
+        print("WARNING: -mmcu=%s not supported. Some defines might be missing. Check https://gcc.gnu.org/onlinedocs/gcc/AVR-Options.html for a full list" % mmcu);
 
     src_filter = subst_list_non_empty(' '.join(env.GetProjectOption('src_filter')).split('>'))
     for filter in src_filter:
@@ -71,6 +92,7 @@ def build_spgm(source, target, env):
         # if libs.src_filter:
         #     print(libs.src_filter)
 
+
     extra_args = subst_list_non_empty(env.GetProjectOption('spgm_generator.extra_args', default="").split('\n'))
     for arg in extra_args:
         args_file.write(arg + '\n');
@@ -85,8 +107,13 @@ def build_spgm(source, target, env):
         print(' '.join(parts))
 
     args_file.close();
-    popen = subprocess.run(args, shell=True)
-    os.unlink(args_file.name);
+    try:
+        popen = subprocess.run(args, shell=True)
+    except Exception as e:
+        raise e
+    finally:
+        os.unlink(args_file.name);
+
     return_code = popen.returncode
     if return_code!=0:
         print('flashstringgen.py failed to run: ' + str(return_code))
