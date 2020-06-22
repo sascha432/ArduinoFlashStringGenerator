@@ -22,7 +22,9 @@ class Generator:
         if os.path.exists(filename):
             try:
                 with open(filename, 'rt') as file:
-                    self.translate = json.loads(file.read())
+                    contents = file.read().strip();
+                    if contents:
+                        self.translate = json.loads(contents)
             except Exception as e:
                 print(filename + ": Cannot read file")
                 print(e)
@@ -70,18 +72,46 @@ class Generator:
             sys.exit(1)
         return num
 
+    def compare_defaults(self, prev, item):
+        if 'default' in prev and 'default' in item and prev['default']!=item['default']:
+            raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (name, item['file'], int(item['line']), item['default'], prev['default']))
+        if 'i18n' in prev:
+            for lang in prev['i18n']:
+                try:
+                    if item['i18n'][lang]!=prev['i18n'][lang]:
+                        raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (name, item['file'], int(item['line']), item['i18n'][lang], prev['i18n'][lang]))
+                except Exception as e:
+                    print(e)
+
+
+    def merge_item(self, val1, val2):
+        if 'default' in val2:
+            val1['default'] = val2['default']
+            if 'auto' in val1:
+                del val1['auto']
+        if 'i18n' in val2:
+            val1['i18n'] = val2['i18n']
+        return val1
+
     def append_used(self, append_used):
         for item in append_used:
             value = item['value']
             name = value
+            # add counter for new items and merge defaults
             if not name in self.translate.keys():
-                self.translate[name] = { 'use_counter': 0}
+                self.translate[name] = { 'use_counter': 0 }
             self.translate[name]['use_counter'] = self.translate[name]['use_counter'] + 1
+            self.translate[name] = self.merge_item(self.translate[name], item)
+
+            # add location of the define
             if not name in self.locations.keys():
                 self.locations[name] = []
             self.locations[name].append(item['file'] + ':' + str(item['line']))
+
             if not value in self.used.keys():
-                self.used[value] = { 'name': name, 'value': value, 'static': False }
+                self.used[value] = self.merge_item({ 'name': name, 'value': value, 'static': False }, item)
+            else:
+                self.compare_defaults(self.used[value], item)
 
     def append_defined(self, append_defined):
         for item in append_defined:
@@ -92,7 +122,10 @@ class Generator:
             else:
                 item['static'] = True
                 if name in self.translate.keys():
-                    self.translate[name]['default'] = item['value']
+                    trans = self.translate[name]
+                    # if 'default' in trans and trans['default']!=item['value']:
+                    #     print("WARNING! xxx")
+                    trans['default'] = item['value']
                 self.defined[name] = item
 
     def update_statics(self):
@@ -114,6 +147,8 @@ class Generator:
 
     def get_value(self, item):
         name = item['name']
+        if 'default' in item:
+            return item['default']
         if name in self.translate.keys():
             trans = self.translate[name]
             if 'default' in trans.keys():

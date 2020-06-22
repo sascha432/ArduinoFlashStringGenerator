@@ -6,10 +6,19 @@
 
 #include <avr/pgmspace.h>
 
-#define PROGMEM_STRING_DECL(name)               extern const char _shared_progmem_string_##name[] PROGMEM;
-#define PROGMEM_STRING_DEF(name, value)         const char _shared_progmem_string_##name[] PROGMEM = { value };
+#ifndef PROGMEM_STRING_DECL
+#define PROGMEM_STRING_DECL(name)                       extern const char _shared_progmem_string_##name[] PROGMEM;
+#define PROGMEM_STRING_DEF(name, value)                 const char _shared_progmem_string_##name[] PROGMEM = { value };
+#endif
 
-#define SPGM(name)                              _shared_progmem_string_##name
-#define FSPGM(name)                             reinterpret_cast<const __FlashStringHelper *>(SPGM(name))
+#ifndef SPGM
+#ifndef FPSTR
+class __FlashStringHelper;
+#define FPSTR(pstr_pointer)                             (reinterpret_cast<const __FlashStringHelper *>(pstr_pointer))
+#endif
+#define SPGM(name, ...)                                 _shared_progmem_string_##name
+#define FSPGM(name, ...)                                FPSTR(SPGM(name))
+#define PSPGM(name, ...)                                (PGM_P)(SPGM(name))
+#endif
 
 #include "./generated/FlashStringGeneratorAuto.h"
