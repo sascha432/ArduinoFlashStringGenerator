@@ -23,7 +23,7 @@ def build_spgm(source, target, env):
         env.subst("$PYTHONEXE"),
         script,
         '-p', env.subst("$PROJECT_DIR"),
-        '--output-dir=' + env.subst(env.GetProjectOption('spgm_generator.output_dir', default='$PROJECT_SRC_DIR/generated')),
+        '--output-dir=' + env.subst(env.GetProjectOption('custom_spgm_generator.output_dir', default='$PROJECT_SRC_DIR/generated')),
         '-d', env.subst("$PROJECT_SRC_DIR"),
         '-@', args_file.name
     ]
@@ -73,7 +73,7 @@ def build_spgm(source, target, env):
             args_file.write('-E\n')
             args_file.write(filter[2:] + '\n')
 
-    include_paths = env.GetProjectOption('spgm_generator.include_path', default="").split('\n')
+    include_paths = env.GetProjectOption('custom_spgm_generator.include_path', default="").split('\n')
     include_paths.extend(env['CPPPATH'])
     include_paths.append(env['PROJECT_INCLUDE_DIR'])
     include_paths = subst_list_non_empty(include_paths)
@@ -93,7 +93,7 @@ def build_spgm(source, target, env):
         #     print(libs.src_filter)
 
 
-    extra_args = subst_list_non_empty(env.GetProjectOption('spgm_generator.extra_args', default="").split('\n'))
+    extra_args = subst_list_non_empty(env.GetProjectOption('custom_spgm_generator.extra_args', default="").split('\n'))
     for arg in extra_args:
         args_file.write(arg + '\n');
 
