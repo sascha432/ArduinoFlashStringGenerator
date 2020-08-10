@@ -6,6 +6,7 @@
 - Fixed passing CPPDEFINES in extra_script.py
 - Adding defines for known BOARD_MCU
 - Added extern "C" to include file
+- Added FLASH_STRING_GENERATOR_AUTO_INIT (see `include/FlashStringGenerator.h`)
 
 ## 0.0.2
 

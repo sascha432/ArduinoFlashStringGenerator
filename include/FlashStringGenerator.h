@@ -23,4 +23,35 @@ class __FlashStringHelper;
 #define PSPGM(name, ...)                                (PGM_P)(SPGM(name))
 #endif
 
+//
+// How to use "FLASH_STRING_GENERATOR_AUTO_INIT"
+//
+// To define a new PROGMEM string without recreating the flash string database, add
+// the FLASH_STRING_GENERATOR_AUTO_INIT macro to your file and use PROGMEM_STRING_DEF
+// inside. After adding the string to the database, replace PROGMEM_STRING_DEF with
+// AUTO_STRING_DEF. The scanner will automatically update any changes and count the
+// usage correctly. Unused strings won't be created and conflicts of definitions with
+// a different values will show as well
+//
+// FLASH_STRING_GENERATOR_AUTO_INIT(
+//     AUTO_STRING_DEF(ping_monitor_response, "%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms")
+//     AUTO_STRING_DEF(ping_monitor_end_response, "Total answer from %s sent %d recevied %d time %ld ms")
+//     PROGMEM_STRING_DEF(ping_monitor_ethernet_detected, "Detected eth address %s")
+// );
+
+#if FLASH_STRINGS_AUTO_INIT
+#define AUTO_STRING_DEF(name, value)                    AUTO_INIT_SPGM(name, value),
+#define FLASH_STRING_GENERATOR_AUTO_INIT(...) \
+    static bool __flash_string_generator_auto_init_var = []() { \
+        SPGM_P strings[] = { \
+            __VA_ARGS__ nullptr \
+        };
+        return true; \
+    }
+#else
+
+#define AUTO_STRING_DEF(name, value)
+#define FLASH_STRING_GENERATOR_AUTO_INIT(...)           __VA_ARGS__
+#endif
+
 #include "./generated/FlashStringGeneratorAuto.h"

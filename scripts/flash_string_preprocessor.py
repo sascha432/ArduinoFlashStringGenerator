@@ -11,6 +11,7 @@ class FlashStringPreprocessor(Preprocessor):
     def __init__(self):
         super(FlashStringPreprocessor, self).__init__()
         self.define("FLASH_STRINGS_AUTO_INIT 1")
+        self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_AUTO_INIT_END)")
         self.define("SPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END)")
         self.define("FSPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END)")
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
@@ -50,7 +51,7 @@ class FlashStringPreprocessor(Preprocessor):
 
     def on_directive_handle(self, directive, toks, ifpassthru, precedingtoks):
         if directive.value=='define' or directive.value=='undef':
-            if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT']:
+            if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT', 'AUTO_INIT_SPGM']:
                 raise OutputDirective(Action.IgnoreAndPassThrough)
         elif directive.value=='include':
             for path in self.path:
@@ -164,6 +165,8 @@ class FlashStringPreprocessor(Preprocessor):
                     spgm_args = { 'current': 'default', 'text': '', 'i18n': {}, 'arg_num': 0 }
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_END':
                     self.add_spgm(spgm_args, self.lastlineno, self.lastsource)
+                    spgm_args = None
+                elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_AUTO_INIT_END':
                     spgm_args = None
                 elif spgm_args!=None:
                     if tok.type=='CPP_STRING':
