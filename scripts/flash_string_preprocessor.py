@@ -10,6 +10,7 @@ from pcpp.preprocessor import Preprocessor, OutputDirective, Action
 class FlashStringPreprocessor(Preprocessor):
     def __init__(self):
         super(FlashStringPreprocessor, self).__init__()
+        self.define("FLASH_STRINGS_AUTO_INIT 1")
         self.define("SPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END)")
         self.define("FSPGM(name, ...) __INTERNAL_USE_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_USE_FLASH_STRING_END)")
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
@@ -49,7 +50,7 @@ class FlashStringPreprocessor(Preprocessor):
 
     def on_directive_handle(self, directive, toks, ifpassthru, precedingtoks):
         if directive.value=='define' or directive.value=='undef':
-            if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF']:
+            if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT']:
                 raise OutputDirective(Action.IgnoreAndPassThrough)
         elif directive.value=='include':
             for path in self.path:

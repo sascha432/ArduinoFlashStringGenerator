@@ -70,9 +70,9 @@ class Generator:
                                 file.write('// ' + location  + '\n')
                         num = num + 1
                         if type=='header':
-                            file.write('PROGMEM_STRING_DECL(' + name + ');\n')
+                            file.write('PROGMEM_STRING_DECL(%s);\n' % (name))
                         else:
-                            file.write('PROGMEM_STRING_DEF(' + name + ', "' + self.get_value(item) + '");\n')
+                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (name, self.get_value(item)))
                 if type=="header":
                     file.writelines([
                         '#ifdef __cplusplus\n',
