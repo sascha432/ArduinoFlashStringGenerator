@@ -1,3 +1,7 @@
+#
+# Author: sascha_lammers@gmx.de
+#
+
 Import("env");
 import subprocess
 import os
@@ -7,7 +11,6 @@ import inspect
 import shlex
 from SCons.Script import ARGUMENTS
 import tempfile
-
 
 def subst_list_non_empty(list):
     return [env.subst(x.strip()) for x in list if x.strip() != '']
@@ -119,4 +122,5 @@ def build_spgm(source, target, env):
         print('flashstringgen.py failed to run: ' + str(return_code))
         sys.exit(return_code)
 
+env.AlwaysBuild(env.Alias("build_spgm", None, build_spgm))
 env.AlwaysBuild(env.Alias("buildspgm", None, build_spgm))

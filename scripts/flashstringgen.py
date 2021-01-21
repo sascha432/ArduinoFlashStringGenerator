@@ -2,17 +2,15 @@
 # Author: sascha_lammers@gmx.de
 #
 
-# pip install pcpp
-
 import sys
 import os
 from os import path
 import argparse
 import json
 import time
-import file_collector
-import generator
-from flash_string_preprocessor import FlashStringPreprocessor
+from generator import file_collector
+from generator import generator
+from generator.flash_string_preprocessor import FlashStringPreprocessor
 
 class ArgfileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -175,7 +173,7 @@ if fc.modified():
     try:
         fcpp.find_strings()
     except Exception as e:
-        raise RuntimeError('exception: %s:%u: %s' % (fcpp.lastsource, fcpp.lastlineno, e))
+        raise RuntimeError('exception: %s:%u: %s' % (fcpp.source, fcpp.lineno, e))
 
     generator.append_used(fcpp.get_used())
     generator.append_defined(fcpp.get_defined())

@@ -5,7 +5,15 @@
 import sys
 import os
 from os import path
-from pcpp.preprocessor import Preprocessor, OutputDirective, Action
+from . import generator
+try:
+    from pcpp.preprocessor import Preprocessor, OutputDirective, Action
+except Exception as e:
+    print("-"*76)
+    print("Cannot import pcpp")
+    print("Exception: %s" % e)
+    print("Path: %s" % sys.path)
+    sys.exit(1)
 
 class FlashStringPreprocessor(Preprocessor):
     def __init__(self):
@@ -50,6 +58,7 @@ class FlashStringPreprocessor(Preprocessor):
         return str
 
     def on_directive_handle(self, directive, toks, ifpassthru, precedingtoks):
+
         if directive.value=='define' or directive.value=='undef':
             if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT', 'AUTO_INIT_SPGM']:
                 raise OutputDirective(Action.IgnoreAndPassThrough)
@@ -59,7 +68,7 @@ class FlashStringPreprocessor(Preprocessor):
                 if os.path.isfile(include_file):
                     if include_file in self.ignore_includes:
                         raise OutputDirective(Action.IgnoreAndPassThrough)
-        return super(FlashStringPreprocessor, self).on_directive_handle(directive,toks,ifpassthru,precedingtoks)
+        return super(FlashStringPreprocessor, self).on_directive_handle(directive, toks, ifpassthru, precedingtoks)
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
     #     print('******** on_directive_unknown')
@@ -80,12 +89,13 @@ class FlashStringPreprocessor(Preprocessor):
         return super(FlashStringPreprocessor, self).on_error(file, line, msg)
 
     def find_strings(self, oh=sys.stdout):
-        self.lastlineno = 0
-        self.lastsource = None
+        self.lineno = 0
+        self.source = None
         done = False
         blanklines = 0
         spgm_args = None
         is_spgm_define = False
+        spgm_define = {}
         while not done:
             emitlinedirective = False
             toks = []
@@ -95,12 +105,16 @@ class FlashStringPreprocessor(Preprocessor):
                 try:
                     tok = self.token()
                 except Exception as e:
-                    raise RuntimeError('exception: %s:%u: %s' % (self.lastsource, self.lastlineno, e))
+                    raise RuntimeError('exception: %s:%u: %s' % (self.source, self.lineno, e))
                 if not tok:
                     done = True
                     break
+
+                self.source = tok.source
+                self.lineno = tok.lineno
+
                 toks.append(tok)
-                if tok.value[0] == '\n':
+                if tok.value.startswith('\n') or tok.value.startswith('\r\n'):
                     break
                 if tok.type not in self.t_WS:
                     all_ws = False
@@ -116,13 +130,13 @@ class FlashStringPreprocessor(Preprocessor):
             # The line in toks is not all whitespace
             emitlinedirective = (blanklines > 6) and self.line_directive is not None
             if hasattr(toks[0], 'source'):
-                if self.lastsource is None:
+                if self.source is None:
                     if toks[0].source is not None:
                         emitlinedirective = True
-                    self.lastsource = toks[0].source
-                elif self.lastsource != toks[0].source:
+                    self.source = toks[0].source
+                elif self.source != toks[0].source:
                     emitlinedirective = True
-                    self.lastsource = toks[0].source
+                    self.source = toks[0].source
             # Replace consecutive whitespace in output with a single space except at any indent
             first_ws = None
             for n in range(len(toks)-1, -1, -1):
@@ -142,19 +156,19 @@ class FlashStringPreprocessor(Preprocessor):
                             if toks[m].value[0] == ' ':
                                 toks[m].value = ' '
             if not self.compress > 1 and not emitlinedirective:
-                newlinesneeded = toks[0].lineno - self.lastlineno - 1
+                newlinesneeded = toks[0].lineno - self.lineno - 1
                 if newlinesneeded > 6 and self.line_directive is not None:
                     emitlinedirective = True
                 else:
                     while newlinesneeded > 0:
                         # oh.write('\n')
                         newlinesneeded -= 1
-            self.lastlineno = toks[0].lineno
+            self.lineno = toks[0].lineno
             # Account for those newlines in a multiline comment
             if toks[0].type == self.t_COMMENT1:
-                self.lastlineno += toks[0].value.count('\n')
+                self.lineno += toks[0].value.count('\n')
             # if emitlinedirective and self.line_directive is not None:
-            #     oh.write(self.line_directive + ' ' + str(self.lastlineno) + ('' if self.lastsource is None else (' "' + self.lastsource + '"' )) + '\n')
+            #     oh.write(self.line_directive + ' ' + str(self.lineno) + ('' if self.source is None else (' "' + self.source + '"' )) + '\n')
             blanklines = 0
             #print toks[0].lineno,
             for tok in toks:
@@ -164,7 +178,7 @@ class FlashStringPreprocessor(Preprocessor):
                 if tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_START':
                     spgm_args = { 'current': 'default', 'text': '', 'i18n': {}, 'arg_num': 0 }
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_END':
-                    self.add_spgm(spgm_args, self.lastlineno, self.lastsource)
+                    self.add_spgm(spgm_args, self.lineno, self.source)
                     spgm_args = None
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_USE_FLASH_STRING_AUTO_INIT_END':
                     spgm_args = None
@@ -184,7 +198,7 @@ class FlashStringPreprocessor(Preprocessor):
                     elif tok.type=='CPP_DOT' and tok.value==',':
                         spgm_args['arg_num'] = spgm_args['arg_num'] + 1
                         if 'value' not in spgm_args:
-                            raise RuntimeError('Name/id missing: %s:%u' % (self.lastsource, self.lastlineno))
+                            raise RuntimeError('Name/id missing: %s:%u' % (self.source, self.lineno))
                         spgm_args['current'] = ''
                         spgm_args['text'] = ''
                     elif tok.type=='CPP_DOT' and tok.value==':':
@@ -202,7 +216,7 @@ class FlashStringPreprocessor(Preprocessor):
                     spgm_define = {'value': ''}
                 elif tok.type=='CPP_ID' and tok.value=='__INTERNAL_DEFINE_FLASH_STRING_END':
                     is_spgm_define = False
-                    self.add_spgm_define(spgm_define, self.lastlineno, self.lastsource)
+                    self.add_spgm_define(spgm_define, self.source, self.lineno)
 
                 if is_spgm_define and tok.type=='CPP_STRING':
                     if not 'name' in spgm_define.keys():
@@ -221,7 +235,7 @@ class FlashStringPreprocessor(Preprocessor):
         del values['arg_num']
         self.spgm_used.append(values)
 
-    def add_spgm_define(self, define, line, file):
+    def add_spgm_define(self, define, file, line):
         self.spgm_defined.append({ 'name': define['name'], 'value': define['value'], 'file': file, 'line': line })
 
     def get_used(self):

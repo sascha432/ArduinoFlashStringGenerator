@@ -10,7 +10,17 @@ Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM
 
 ## Requirements
 
-Install requirements with `pip install pcpp`
+- pcpp
+
+Install pcpp in a directory that is in the PIO path, for example
+
+```
+pip install pcpp --prefix $HOME\.platformio\penv
+
+or
+
+pip install pcpp --prefix ~/.platformio/penv
+```
 
 ## Basic usage
 

@@ -2,6 +2,7 @@
 
 ## 0.0.3 (work-in-progress)
 
+- Reorganized file structure
 - Added missing include in FlashStringGeneratorAuto.cpp
 - Fixed passing CPPDEFINES in extra_script.py
 - Adding defines for known BOARD_MCU

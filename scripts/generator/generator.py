@@ -6,6 +6,9 @@ import sys
 import os
 import json
 
+def subst_list_non_empty(list):
+    return [env.subst(x.strip()) for x in list if x.strip() != '']
+
 class Generator:
     def __init__(self):
         self.translate = {}
@@ -13,7 +16,7 @@ class Generator:
         self.used = {}
         self.locations = {}
 
-    def beatify(self, name):
+    def beautify(self, name):
         name = name.replace('_', ' ')
         return name
 
@@ -27,8 +30,8 @@ class Generator:
                         self.translate = json.loads(contents)
             except Exception as e:
                 print(filename + ": Cannot read file")
-                print(e)
-                sys.exit(1)
+                raise e;
+
         # reset counters
         for name in self.translate:
             self.translate[name]['use_counter'] = 0
@@ -37,9 +40,9 @@ class Generator:
         try:
             with open(filename, 'wt') as file:
                 file.write(json.dumps(self.translate, indent=4))
-        except:
+        except Exception as e:
             print(filename + ': Cannot write file')
-            sys.exit(1)
+            raise e;
 
     def write(self, filename, type, include_file = None):
         if type=='static':
@@ -86,12 +89,12 @@ class Generator:
 
     def compare_defaults(self, prev, item):
         if 'default' in prev and 'default' in item and prev['default']!=item['default']:
-            raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (name, item['file'], int(item['line']), item['default'], prev['default']))
+            raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (item['name'], item['file'], int(item['line']), item['default'], prev['default']))
         if 'i18n' in prev:
             for lang in prev['i18n']:
                 try:
                     if item['i18n'][lang]!=prev['i18n'][lang]:
-                        raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (name, item['file'], int(item['line']), item['i18n'][lang], prev['i18n'][lang]))
+                        raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (item['name'], item['file'], int(item['line']), item['i18n'][lang], prev['i18n'][lang]))
                 except Exception as e:
                     print(e)
 
@@ -149,7 +152,7 @@ class Generator:
                 if name in self.translate.keys():
                     trans = self.translate[name]
                     if not 'default' in trans.keys():
-                        trans['auto'] = self.beatify(self.used[item]['value'])
+                        trans['auto'] = self.beautify(self.used[item]['value'])
 
     def get_used(self):
         return self.used
