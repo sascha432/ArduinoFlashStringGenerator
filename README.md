@@ -10,16 +10,16 @@ Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM
 
 ## Requirements
 
-- pcpp
+- pcpp (tested with 1.22)
 
 Install pcpp in a directory that is in the PIO path, for example
 
 ```
-pip install pcpp --prefix $HOME\.platformio\penv
+pip install pcpp==1.22 --prefix $HOME\.platformio\penv
 
 or
 
-pip install pcpp --prefix ~/.platformio/penv
+pip install pcpp==1.22 --prefix ~/.platformio/penv
 ```
 
 ## Basic usage

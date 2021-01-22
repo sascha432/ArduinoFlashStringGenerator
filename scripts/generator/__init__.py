@@ -3,7 +3,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from . import generator
+from .generator import Generator
 from .item import Item
-from . import flash_string_preprocessor
-from . import file_collector
+from .file_collector import FileCollector
+from .flash_string_preprocessor import FlashStringPreprocessor

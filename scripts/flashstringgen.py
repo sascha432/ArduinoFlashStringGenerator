@@ -8,9 +8,11 @@ from os import path
 import argparse
 import json
 import time
-from generator import file_collector
-from generator import generator
-from generator.flash_string_preprocessor import FlashStringPreprocessor
+import traceback
+from generator import Item
+from generator import Generator
+from generator import FileCollector
+from generator import FlashStringPreprocessor
 
 class ArgfileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -46,167 +48,181 @@ parser.add_argument("-D", "--define", help="Define macro", action='append', defa
 parser.add_argument("-@", "--args-from-file", help="Read additional arguments from file, one argument per line", action=ArgfileAction, default=None)
 
 args = parser.parse_args()
-# second pass in case more have been read from file
-if args.args_from_file:
-    args = parser.parse_args(sys.argv[1:] + args.args_from_file)
 
-if args.i18n:
-    parser.error("--i18n: currently not supported")
-
-def verbose(msg):
-    if args.verbose:
-        print(msg)
-
-def full_dir(dir, file):
-    if dir!='':
-        file = dir + os.sep + file
-    return path.realpath(file)
-
-# args.verbose = True
-
-# prepend output dir
-
-args.output_declare = full_dir(args.output_dir, args.output_declare)
-args.output_define = full_dir(args.output_dir, args.output_define)
-args.output_static = full_dir(args.output_dir, args.output_static)
-args.output_translate = full_dir(args.output_dir, args.output_translate)
-args.database = full_dir(args.output_dir, args.database)
-
-generator = generator.Generator()
-
-# create a list of files to scan
-
-fc = file_collector.FileCollector(args.database)
-fc.read_database()
 try:
-    if len(args.source_dir)==0:
-        parser.error('At least one --source_dir required');
+    # second pass in case more have been read from file
+    if args.args_from_file:
+        args = parser.parse_args(sys.argv[1:] + args.args_from_file)
 
-    for filter in args.src_filter_include:
-        fc.add_src_filter_include(filter, args.source_dir[0])
-    for filter in args.src_filter_exclude:
-        fc.add_src_filter_exclude(filter, args.source_dir[0])
-    fc.add_src_filter_exclude(args.output_declare)
-    fc.add_src_filter_exclude(args.output_define)
-    fc.add_src_filter_exclude(args.output_static)
-    fc.add_src_filter_exclude(args.output_translate)
+    if args.i18n:
+        parser.error("--i18n: currently not supported")
 
-    for file in args.source_file:
-        fc.add_file(file)
-    for dir in args.source_dir:
-        fc.add_dir(dir, args.ext)
-except RuntimeError as e:
-    print(e)
-    sys.exit(1)
+    def verbose(msg):
+        if args.verbose:
+            print(msg)
 
-files = fc.list()
-if len(files) == 0:
-    parser.error("No source files found")
+    def full_dir(dir, file):
+        if dir!='':
+            file = dir + os.sep + file
+        return path.realpath(file)
 
-# create defines for the preprocessor
+    # args.verbose = True
 
-defines = []
-for define in args.define:
-    if '=' not in define:
-        define = define + ' 1'
-    else:
-        list = define.split('=', 1)
-        val = list[1]
-        if len(val)>=4 and val.startswith('\\"') and val.endswith('\\"'):
-            val = val[1:-2] + '"'
-        define = list[0] + ' ' + val
-    defines.append(define)
+    # prepend output dir
 
-# read the translation file
+    args.output_declare = full_dir(args.output_dir, args.output_declare)
+    args.output_define = full_dir(args.output_dir, args.output_define)
+    args.output_static = full_dir(args.output_dir, args.output_static)
+    args.output_translate = full_dir(args.output_dir, args.output_translate)
+    args.database = full_dir(args.output_dir, args.database)
 
-generator.read_translate(args.output_translate)
+    generator = Generator()
 
-if args.verbose:
-    print("Extensions: " + str(args.ext))
-    print("Modified: " + str(fc.modified()))
-    print("Files: " + str(len(files)))
-    print("Output declare: " + args.output_declare)
-    print("Output define: " + args.output_define)
-    print("Output static: " + args.output_static)
-    print("Output translate: " + args.output_translate)
-    filters = fc.get_filter()
-    print("Filter include/exclude: %u/%u" % (len(filters['include']), len(filters['exclude'])))
-    print("Defines: %u" % len(defines))
-    print("Includes: %u" % len(args.include_path))
-    print("Files: %u" % len(files))
-    print()
+    # create a list of files to scan
 
-verbose("Processing files...")
-
-# check if any source file was modified and scan the modified files
-
-if fc.modified():
-    fcpp = FlashStringPreprocessor()
-    for define in defines:
-        # if args.verbose:
-        #     print('define ' + define)
-        fcpp.define(define)
-
-    for include in args.include_path:
-        fcpp.add_path(path.realpath(include))
-
-    fcpp.add_ignore_include(args.output_declare)
-    fcpp.add_ignore_include(args.output_define)
-    fcpp.add_ignore_include(args.output_static)
-
-    filters = fc.get_filter()
-    for exclude in filters['exclude']:
-        fcpp.add_ignore_include(exclude)
-
-    input = ''
-    for file in files:
-        if files[file]['state']!='-':  #and (args.force or files[file]['state']!=''):
-            # if args.verbose:
-            #     print(file + ' ' + fc.long_state(files[file]))
-            input = input + "#include \"" + file + "\"\n"
-        # else:
-        #     if args.verbose:
-        #         print("Skipping " + file + ' ' + fc.long_state(files[file]))
-
-    fcpp.parse(input)
-    # fcpp.write(sys.stdout)
+    fc = FileCollector(args.database)
+    fc.read_database()
     try:
-        fcpp.find_strings()
-    except Exception as e:
-        raise RuntimeError('exception: %s:%u: %s' % (fcpp.source, fcpp.lineno, e))
+        if len(args.source_dir)==0:
+            parser.error('At least one --source_dir required');
 
-    generator.append_used(fcpp.get_used())
-    generator.append_defined(fcpp.get_defined())
+        for filter in args.src_filter_include:
+            fc.add_src_filter_include(filter, args.source_dir[0])
+        for filter in args.src_filter_exclude:
+            fc.add_src_filter_exclude(filter, args.source_dir[0])
+        fc.add_src_filter_exclude(args.output_declare)
+        fc.add_src_filter_exclude(args.output_define)
+        fc.add_src_filter_exclude(args.output_static)
+        fc.add_src_filter_exclude(args.output_translate)
 
-    # create a list of strings that have been defined in the source code
+        for file in args.source_file:
+            fc.add_file(file)
+        for dir in args.source_dir:
+            fc.add_dir(dir, args.ext)
+    except RuntimeError as e:
+        print(e)
+        sys.exit(1)
 
-    generator.update_statics()
+    files = fc.list()
+    if len(files) == 0:
+        parser.error("No source files found")
 
-    # create the auto generated files
-    if args.dry_run:
-        print("Dry run")
-        num = 0;
-    else:
-        num = generator.write(args.output_declare, 'header', args.include_file)
-        generator.write(args.output_define, 'define', args.include_file)
-        generator.write(args.output_static, 'static')
+    # create defines for the preprocessor
 
-        generator.write_translate(args.output_translate)
-        fc.write_database()
+    defines = []
+    for define in args.define:
+        if '=' not in define:
+            define = define + ' 1'
+        else:
+            list = define.split('=', 1)
+            val = list[1]
+            if len(val)>=4 and val.startswith('\\"') and val.endswith('\\"'):
+                val = val[1:-2] + '"'
+            define = list[0] + ' ' + val
+        defines.append(define)
+
+    # read the translation file
+
+    generator.read_config_json(args.output_translate)
 
     if args.verbose:
-        used = generator.get_used()
-        for string in used:
-            item = used[string]
-            if item['static']:
-                type = 'static'
-            elif 'default' in item:
-                type = 'default'
-            else:
-                type = 'auto'
-            print(type + ' ' + item['name'] + '=' + generator.get_value(item))
+        print("Extensions: " + str(args.ext))
+        print("Modified: " + str(fc.modified()))
+        print("Files: " + str(len(files)))
+        print("Output declare: " + args.output_declare)
+        print("Output define: " + args.output_define)
+        print("Output static: " + args.output_static)
+        print("Output translate: " + args.output_translate)
+        filters = fc.get_filter()
+        print("Filter include/exclude: %u/%u" % (len(filters['include']), len(filters['exclude'])))
+        print("Defines: %u" % len(defines))
+        print("Includes: %u" % len(args.include_path))
+        print("Files: %u" % len(files))
+        print()
 
-    print(str(num) + " strings created")
+    verbose("Processing files...")
 
-else:
-    print("No changes detected")
+    # check if any source file was modified and scan the modified files
+
+    if fc.modified():
+        fcpp = FlashStringPreprocessor()
+        for define in defines:
+            # if args.verbose:
+            #     print('define ' + define)
+            fcpp.define(define)
+
+        for include in args.include_path:
+            fcpp.add_path(path.realpath(include))
+
+        fcpp.add_ignore_include(args.output_declare)
+        fcpp.add_ignore_include(args.output_define)
+        fcpp.add_ignore_include(args.output_static)
+
+        filters = fc.get_filter()
+        for exclude in filters['exclude']:
+            fcpp.add_ignore_include(exclude)
+
+        input = ''
+        for file in files:
+            if files[file]['state']!='-':  #and (args.force or files[file]['state']!=''):
+                # if args.verbose:
+                #     print(file + ' ' + fc.long_state(files[file]))
+                input = input + "#include \"" + file + "\"\n"
+            # else:
+            #     if args.verbose:
+            #         print("Skipping " + file + ' ' + fc.long_state(files[file]))
+
+        fcpp.parse(input)
+
+        fcpp.find_strings()
+
+        if Item.DebugType.DUMP_ITEMS in Item.DEBUG:
+            print('-'*76)
+            print('items before merge')
+            print('-'*76)
+            generator.dump()
+
+        generator.merge_items(fcpp.items)
+        generator.update_items()
+
+        if Item.DebugType.DUMP_ITEMS in Item.DEBUG:
+            print('-'*76)
+            print('merged items')
+            print('-'*76)
+            generator.dump_merged()
+
+        # create the auto generated files
+        if args.dry_run:
+            print("Dry run")
+            num = 0;
+        else:
+            num = generator.write(args.output_declare, 'header', args.include_file)
+            generator.write(args.output_define, 'define', args.include_file)
+            generator.write(args.output_static, 'static')
+
+            generator.write_config_json(args.output_translate)
+            fc.write_database()
+
+        if args.verbose:
+            used = generator.get_used()
+            for string in used:
+                item = used[string]
+                if item['static']:
+                    type = 'static'
+                elif 'default' in item:
+                    type = 'default'
+                else:
+                    type = 'auto'
+                print(type + ' ' + item['name'] + '=' + generator.get_value(item))
+
+        print(str(num) + " strings created")
+
+    else:
+        print("No changes detected")
+
+except Exception as e:
+    if Item.DebugType.EXCEPTION in Item.DEBUG or args.verbose:
+        print(traceback.format_exc())
+    else:
+        print('Error: %s' % e)
+        sys.exit(1)

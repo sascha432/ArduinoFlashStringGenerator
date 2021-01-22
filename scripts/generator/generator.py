@@ -5,50 +5,61 @@
 import sys
 import os
 import json
-
-def subst_list_non_empty(list):
-    return [env.subst(x.strip()) for x in list if x.strip() != '']
+import copy
+from .item import Item
 
 class Generator:
+
     def __init__(self):
-        self.translate = {}
-        self.defined = {}
-        self.used = {}
-        self.locations = {}
+        self._items = []
+        self._merged = {}
+        # self.translate = {}
+        # self.defined = {}
+        # self.used = {}
+        # self.locations = {}
 
     def beautify(self, name):
         name = name.replace('_', ' ')
         return name
 
-    def read_translate(self, filename):
+    def read_config_json(self, filename):
         self.translate = {}
         if os.path.exists(filename):
             try:
                 with open(filename, 'rt') as file:
                     contents = file.read().strip();
                     if contents:
-                        self.translate = json.loads(contents)
+                        for name, data in json.loads(contents).items():
+                            item = Item(name=name)
+                            if 'default' in data:
+                                item._value = data['default']
+                            elif 'auto' in data:
+                                item._value = data['auto']
+                                item.auto = True
+                            if 'i18n' in data:
+                                for lang, value in data['i18n'].items():
+                                    item.i18n.set(lang, value)
+                            self._items.append(item)
             except Exception as e:
-                print(filename + ": Cannot read file")
-                raise e;
+                raise RuntimeError("cannot read %s: %s" % (filename, e))
 
         # reset counters
         for name in self.translate:
             self.translate[name]['use_counter'] = 0
 
-    def write_translate(self, filename):
+    def write_config_json(self, filename):
         try:
             with open(filename, 'wt') as file:
-                file.write(json.dumps(self.translate, indent=4))
+                # file.write(json.dumps(self.translate, indent=4))
+                pass
         except Exception as e:
-            print(filename + ': Cannot write file')
-            raise e;
+            raise RuntimeError("cannot write %s: %s" % (filename, e))
 
     def write(self, filename, type, include_file = None):
-        if type=='static':
-            items = self.defined
-        else:
-            items = self.used
+        # if type=='static':
+        #     items = self.defined
+        # else:
+        #     items = self.used
         num = 0
         try:
             with open(filename, 'wt') as file:
@@ -59,23 +70,27 @@ class Generator:
                     file.writelines([
                         '#pragma once\n',
                         '#ifdef __cplusplus\n',
-                        'extern "C"{\n',
+                        'extern "C" {\n',
                         '#endif\n'
                     ])
                 elif type=='define':
                     file.write('#include "FlashStringGeneratorAuto.h"\n')
-                for string in items:
-                    item = items[string]
-                    if (type=='static' and item['static']==True) or item['static']==False:
-                        name = item['name']
-                        if name in self.locations.keys():
-                            for location in self.locations[name]:
-                                file.write('// ' + location  + '\n')
+                for item in self._merged.values():
+                    if item.is_valid and not item.removed and (type=='static')==item.static:
+                        name = item.name
+                    # item = items[string]
+                    # if (type=='static' and item['static']==True) or item['static']==False:
+                        # name = item['name']
+                        # if name in self.locations:
+                        #     for location in self.locations[name]:
+
+                        if item.locations:
+                            file.write('// %s' % item.locations_str)
                         num = num + 1
                         if type=='header':
                             file.write('PROGMEM_STRING_DECL(%s);\n' % (name))
                         else:
-                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (name, self.get_value(item)))
+                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (name, item.value))
                 if type=="header":
                     file.writelines([
                         '#ifdef __cplusplus\n',
@@ -83,91 +98,119 @@ class Generator:
                         '#endif\n'
                     ])
         except OSError as e:
-            print(filename + ': Cannot create file')
-            sys.exit(1)
+            raise RuntimeError("cannot create %s: %s" % (filename, e))
         return num
 
-    def compare_defaults(self, prev, item):
-        if 'default' in prev and 'default' in item and prev['default']!=item['default']:
-            raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (item['name'], item['file'], int(item['line']), item['default'], prev['default']))
-        if 'i18n' in prev:
-            for lang in prev['i18n']:
-                try:
-                    if item['i18n'][lang]!=prev['i18n'][lang]:
-                        raise RuntimeError("Invalid redefinition of %s: %s:%u: '%s' != '%s'" % (item['name'], item['file'], int(item['line']), item['i18n'][lang], prev['i18n'][lang]))
-                except Exception as e:
-                    print(e)
+    def find_items(self, name, item_self=None, return_removed=False):
+        return [item for item in self._items if (return_removed or not item.removed) and (item.name==name) and (item_self==None or id(item)!=id(item_self))]
 
+    def find_lang(self, name, lang, item_self=None):
+        for item in self.find_items(name, item_self):
+            res = item.i18n.find(lang)
+            if res:
+                return res
+        return None
 
-    def merge_item(self, val1, val2):
-        if 'default' in val2:
-            val1['default'] = val2['default']
-            if 'auto' in val1:
-                del val1['auto']
-        if 'i18n' in val2:
-            val1['i18n'] = val2['i18n']
-        return val1
+    def merge_items(self, items):
+        self._merged = {}
+        for item in items:
+            if item.removed:
+                continue
+            for item2 in self.find_items(item.name, item, True):
 
-    def append_used(self, append_used):
-        for item in append_used:
-            value = item['value']
-            name = value
-            # add counter for new items and merge defaults
-            if not name in self.translate.keys():
-                self.translate[name] = { 'use_counter': 0 }
-            self.translate[name]['use_counter'] = self.translate[name]['use_counter'] + 1
-            self.translate[name] = self.merge_item(self.translate[name], item)
+                # print("N",item2.name,item2._use_counter)
+                # print("X",item2)
 
-            # add location of the define
-            if not name in self.locations.keys():
-                self.locations[name] = []
-            self.locations[name].append(item['file'] + ':' + str(item['line']))
+                # check if the item is defined multiple times
+                if not item2.removed and not item.from_config_file and not item2.from_config_file and item.type in(Item.ItemType.DEFINE, Item.ItemType.AUTO_INIT) and item2:
+                    print('WARNING: redefinition of %s="%s" in %s:%u first definition in %s:%u' % (item.name, item2.name, item.source, item.lineno, item2.source, item2.lineno))
 
-            if not value in self.used.keys():
-                self.used[value] = self.merge_item({ 'name': name, 'value': value, 'static': False }, item)
-            else:
-                self.compare_defaults(self.used[value], item)
+                # check for invalid redefinitions and merge default values
+                cmp_item = self.compare_values(item, item2)
+                if cmp_item:
+                    raise RuntimeError('redefinition with different value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
+                        (item.name, item.value, item.source, item.lineno, \
+                        cmp_item.value, item2.source, item2.lineno))
 
-    def append_defined(self, append_defined):
-        for item in append_defined:
-            name = item['name']
-            if name in self.defined.keys():
-                item2 = self.defined[name]
-                print("WARING: redefinition of " + name + '="' + name + '" in ' + item['file'] + ':' + str(item['line']) + ' first definition in ' + item2['file'] + ':' + str(item2['line']))
-            else:
-                item['static'] = True
-                if name in self.translate.keys():
-                    trans = self.translate[name]
-                    # if 'default' in trans and trans['default']!=item['value']:
-                    #     print("WARNING! xxx")
-                    trans['default'] = item['value']
-                self.defined[name] = item
+                # # TODO remove debug code
+                # item = copy.deepcopy(item)
+                # item2 = copy.deepcopy(item2)
 
-    def update_statics(self):
-        for item in self.used:
-            name = self.used[item]['name']
-            if name in self.defined.keys():
-                self.used[item]['static'] = True
-            else:
-                if name in self.translate.keys():
-                    trans = self.translate[name]
-                    if not 'default' in trans.keys():
-                        trans['auto'] = self.beautify(self.used[item]['value'])
+                item.merge(item2)
 
-    def get_used(self):
-        return self.used
+                if item.has_use_counter:
+                    if item.type==Item.ItemType.SPGM:
+                        item.use_counter += 1
+                    if item2.has_use_counter:
+                        item.copy_counter(item2)
 
-    def get_defined(self):
-        return self.defined
+                if item.has_locations and item2.has_locations:
+                    item.copy_locations(item2)
 
-    def get_value(self, item):
-        name = item['name']
-        if 'default' in item:
-            return item['default']
-        if name in self.translate.keys():
-            trans = self.translate[name]
-            if 'default' in trans.keys():
-                return trans['default']
-            elif 'auto' in trans.keys():
-                return trans['auto']
-        return item['value']
+                self._merged[item.name] = item
+
+            # add item to list
+            self._items.append(item)
+
+    def compare_values(self, item1, item2):
+        if item1.removed or item2.removed or \
+                item1.from_config_file or item2.from_config_file or \
+                item1==item2:
+            return None
+        if item1.has_value and item2.has_value and item1._value!=item2._value:
+            return item2
+        for l1, i1 in item1.i18n.items():
+            for l2, i2 in item2.i18n.items():
+                # //TODO
+                print(l1,l2,i1,i2)
+        return None
+
+    def update_items(self):
+        # check for missing values and add if possible
+        for item in self._items:
+            if item.removed:
+                continue
+            if item.value==None:
+                for item2 in self.find_items(item.name, item):
+                    if item2.value!=None:
+                        item.value = item2.value
+                        break
+        # create values automatically and mark them
+        for item in self._items:
+            if item.value==None:
+                item.value = self.beautify(item.name)
+                item.auto = True
+
+    @property
+    def items(self):
+        return self._items
+
+    def clear_items(self):
+        self._items = {}
+
+    def dump(self):
+        for item in self._items:
+            print(str(item))
+
+    def dump_merged(self):
+        for item in self._merged.values():
+            print(str(item))
+
+    # def use_counter(self, name):
+    #     n = 0
+    #     for item in self._items:
+    #         if item.unused==False and item.type==self.SPGM and item.name==name:
+    #             n += 1
+    #     return n
+
+    # def get_value(self, item):
+    #     name = item.name
+    #     if item.default_value!=None:
+    #         return item.default_value
+    #     if name in self.translate.keys():
+    #         trans = self.translate[name]
+    #         if 'default' in trans.keys():
+    #             return trans['default']
+    #         elif 'auto' in trans.keys():
+    #             return trans['auto']
+    #     return item['value']
