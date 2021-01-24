@@ -2,6 +2,7 @@
 
 ## 0.0.3 (work-in-progress)
 
+- Improved performance by including files only once
 - Fixed file collector
 - Added rebuild option (--force)
 - Fixed issues with pcpp 1.22

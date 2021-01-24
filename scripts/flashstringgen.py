@@ -4,7 +4,7 @@
 
 import sys
 from os import path
-import glob
+import time
 import argparse
 import traceback
 from generator import Item, DebugType, Generator, FileCollector, CompareType, FlashStringPreprocessor
@@ -52,6 +52,8 @@ def verbose(msg):
 
 # catch all
 try:
+
+    start_time = time.monotonic()
 
     # second pass in case more have been read from file
     if args.args_from_file:
@@ -122,12 +124,14 @@ try:
         print('Filter exclude: %u' % (len(fc.database.filter_excludes)))
         print('Defines: %u' % len(fc.database.defines))
         print('Includes: %u' % len(fc.database.includes))
+        print('Includes: %u' % len(fc.database.includes))
+        print('Force rebuild: %s' % args.force)
         print()
 
     verbose("Processing files...")
 
     # create preprocessor
-    fcpp = FlashStringPreprocessor()
+    fcpp = FlashStringPreprocessor(args.verbose)
     for define, value in fc.database.defines.items():
         if args.verbose:
             print('define %s=%s' % (define, value))
@@ -141,9 +145,15 @@ try:
     fcpp.add_ignore_include(fc.output_files.static)
 
     for exclude in fc.database.filter_excludes:
-        for file in glob.glob(exclude):
-            if path.isfile(file):
-                fcpp.add_ignore_include(file)
+        fcpp.add_ignore_include(exclude)
+
+    if args.verbose:
+        for pathname in fc.database.includes:
+            print('include %s' % pathname)
+        for pathname in fc.database.filter_includes:
+            print('filter_include %s' % pathname)
+        for pathname in fc.database.filter_excludes:
+            print('filter_exclude %s' % pathname)
 
     if args.force:
         fc.modified_files = fc.database._files
@@ -158,14 +168,6 @@ try:
     input = ''
     for pathname, file in fc.modified_files.items():
         input = input + "#include \"" + path.abspath(pathname) + "\"\n"
-
-        # if files[file]['state']!='-':  #and (args.force or files[file]['state']!=''):
-        #     # if args.verbose:
-        #     #     print(file + ' ' + fc.long_state(files[file]))
-        #     input = input + "#include \"" + file + "\"\n"
-        # else:
-        #     if args.verbose:
-        #         print("Skipping " + file + ' ' + fc.long_state(files[file]))
 
     # parse files
     fcpp.parse(input)
@@ -191,7 +193,7 @@ try:
         for item in generator.items:
             print('%s="%s" in %s' % (item.name, item.value, item.get_source(path.basename(fc.config_file))))
 
-    print('%u strings created' % num)
+    print('%u strings created in %.2f seconds' % (num, time.monotonic() - start_time))
 
 except Exception as e:
     if Item.DebugType.EXCEPTION in Item.DEBUG or args.verbose:

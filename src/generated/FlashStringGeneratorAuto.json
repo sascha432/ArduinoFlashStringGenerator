@@ -91,8 +91,8 @@
             "en-US": "$%.2f",
             "en_CA": "CA$%.2f",
             "en_au": "AU$%.2f",
-            "de;fr;es;it": "%.2fEUR",
-            "bg;de": "%.2fEUR"
+            "es;de;it;fr": "%.2fEUR",
+            "de;bg": "%.2fEUR"
         },
         "locations": "src/example.cpp:51 (SPGM),src/example.cpp:52 (SPGM)"
     },
