@@ -10,15 +10,17 @@ import sys
 import fnmatch
 import enum
 import hashlib
+import pathlib
+from typing import Generic, Generator, Iterable, NewType, Sequence, List, Dict, Tuple, Union
 
 # File.COMPARE
 class CompareType(enum.Enum):
     MODIFIED_TIMESTAMP = 'MODIFIED_TIMESTAMP'
     HASH = 'HASH'
 
-# FileCollector.STORE_PATH
+# Path.STORE_PATH
 class PathType(enum.Enum):
-    RELATIVE_PATH = 'RELATIVE_PATH'
+    NORM_PATH = 'NORM_PATH'
     ABS_PATH = 'ABS_PATH'
     REAL_PATH = 'REAL_PATH'
 
@@ -27,30 +29,54 @@ class FilterType(enum.Enum):
     INCLUDE = 'INCLUDE'
     EXCLUDE = 'EXCLUDE'
 
-class ModifiedType(enum.Enum):
-    UNMODIFIED = 'UNMODIFIED'
-    MODIFIED = 'MODIFIED'
-    NEW = 'NEW'
-    REMOVED = 'REMOVED'
+# class ModifiedType(enum.Enum):
+#     UNMODIFIED = 'UNMODIFIED'
+#     MODIFIED = 'MODIFIED'
+#     NEW = 'NEW'
+#     REMOVED = 'REMOVED'
 
-    def __str__(self):
-        return str(self.value).split('.')[-1].lower()
+#     def __str__(self):
+#         return str(self.value).split('.')[-1].lower()
 
-    def short_str(self):
-        if self==ModifiedType.UNMODIFIED:
-            return '.'
-        if self==ModifiedType.MODIFIED:
-            return '*'
-        if self==ModifiedType.NEW:
-            return '+'
-        if self==ModifiedType.REMOVED:
-            return '-'
+#     def short_str(self):
+#         if self==ModifiedType.UNMODIFIED:
+#             return '.'
+#         if self==ModifiedType.MODIFIED:
+#             return '*'
+#         if self==ModifiedType.NEW:
+#             return '+'
+#         if self==ModifiedType.REMOVED:
+#             return '-'
+
+class Path(object):
+
+    STORE_PATH = PathType.NORM_PATH
+
+    def normalize(name):
+        if name==None:
+            return None
+        if isinstance(name, list):
+            for idx, item in enumerate(name):
+                name[idx] = Path.normalize(item)
+            return
+        if Path.STORE_PATH==PathType.ABS_PATH:
+            return path.abspath(name)
+        if Path.STORE_PATH==PathType.REAL_PATH:
+            return path.realpath(name)
+        return path.normpath(name)
+
+    def normpath(name):
+        if isinstance(name, list):
+            for idx, item in enumerate(name):
+                name[idx] = Path.normpath(item)
+            return
+        return path.normpath(name)
 
 class OutputFiles(object):
-    def __init__(self, declare, define, static):
-        self.declare = declare
-        self.define = define
-        self.static = static
+    def __init__(self, declare=None, define=None, static=None):
+        self.declare = Path.normalize(declare)
+        self.define = Path.normalize(define)
+        self.static = Path.normalize(static)
 
     def _todict(self):
         return {
@@ -59,113 +85,115 @@ class OutputFiles(object):
             'static': self.static
         }
 
-class File(object):
+    def _fromdict(dict):
+        return OutputFiles(dict['declare'], dict['define'], dict['static'])
 
-    COMPARE = CompareType.HASH
+    def exist(self):
+        return path.isfile(self.declare) and path.isfile(self.define) and path.isfile(self.static)
 
-    def __init__(self, file, size=None, mtime=None, hash=None, type=ModifiedType.UNMODIFIED):
-        self.file = file
-        self.type = type
-        self.size = size
-        self.mtime = mtime
-        self.hash = hash
+class Database(object):
+    def __init__(self):
+        self._files = {}
+        self._includes = []
+        self._defines = {}
+        self._filter_includes = []
+        self._filter_excludes = []
+        self._output_files = OutputFiles()
 
-    def hash_file(self):
-        if self.COMPARE==CompareType.HASH:
-            with open(self.file, 'rb') as f:
-                hash = hashlib.sha1(f.read())
-                return hash.digest()
-        return None
+    @property
+    def files(self) -> Dict[str, Dict[str, str]]:
+        return self._database._files
 
-    # markl as removed
-    def remove(self):
-        self.size = None
-        self.mtime = None
-        self.hash = None
-        self.type = ModifiedType.REMOVED
+    @property
+    def includes(self) -> List[str]:
+        return self._includes
 
-    # update size, modified timestamp and hash (if enabled)
-    def modified(self, size, mtime):
-        if self.size!=size or self.mtime!=mtime:
-            self.type = ModifiedType.MODIFIED
-            self.size = size
-            self.mtime = mtime
-        hash = self.hash_file()
-        if hash!=self.hash:
-            self.hash = hash
-            self.type = ModifiedType.MODIFIED
-        return self.type
+    @property
+    def defines(self) -> Dict[str, str]:
+        return self._defines
 
-    # update file information
-    def update(self):
-        if not path.exists(self.file) or not path.isfile(self.file):
-            self.remove()
-            return
-        stat = os.stat(self.file)
-        return self.modified(stat.st_size, stat.st_mtime)
+    @property
+    def filter_excludes(self) -> List[str]:
+        return self._filter_excludes
 
-    def _todict(self):
-        dict = {'file': self.file, 'size': self.size, 'mtime': self.mtime}
-        if hash!=None:
-            dict['hash'] = hash
-        return dict
+    @property
+    def filter_includes(self) -> List[str]:
+        return self._filter_includes
 
-class FileCollector:
+    @property
+    def output_files(self) -> OutputFiles:
+        return self._output_files
 
-    STORE_PATH = PathType.RELATIVE_PATH
+class FileCollector(object):
+
+    COMPARE = CompareType.MODIFIED_TIMESTAMP
 
     def __init__(self, database_file, config_file, verbose=False):
         self.verbose = verbose
         self.config_file = config_file
         self.database_file = database_file
-        self.database = None
-        self.output_files = None
-        self.includes = []
-        self.defines = {}
-        self.filters = { 'include': [], 'exclude': [] }
+        self._database = Database()
+        self.modified_files = {}
+        self._includes = []
 
     @property
     def modified(self):
         return self._modified
 
-    def normalize_path(self, pathname=None):
-        if pathname==None:
-            pathname=self
-        if FileCollector.STORE_PATH==PathType.ABS_PATH:
-            return path.abspath(pathname)
-        if FileCollector.STORE_PATH==PathType.REAL_PATH:
-            return path.abspath(pathname)
-        return path.normpath(pathname)
+    @property
+    def database(self) -> Database:
+        return self._database
+
+    @property
+    def files(self) -> Dict[str, Dict[str, str]]:
+        return self._database._files
+
+    @property
+    def output_files(self):
+        return self._database._output_files
+
+    @output_files.setter
+    def output_files(self, values):
+        self._output_files = OutputFiles(values[0], values[1], values[2])
+
+    def hash_file(self, name, file):
+        if FileCollector.COMPARE==CompareType.HASH:
+            with open(name, 'rb') as f:
+                hash = hashlib.sha1(f.read())
+                file['hash'] = hash.hexdigest()
+        return file
 
     def prepend_dir(dir, file):
         if dir and not path.isabs(file):
             file = path.join(dir, file)
-        return FileCollector.normalize_path(file)
+        return Path.normalize(file)
+
+    def is_different(self, item1, item2):
+        return json.dumps(item1, sort_keys=True)!=json.dumps(item2, sort_keys=True)
 
     # parse args.define and add preprocessor defines
     def parse_defines(self, args_define):
-        self.defines = {}
+        self._defines = {}
         for define in args_define:
             if '=' not in define:
-                self.defines[define] = '1'
+                value = '1'
             else:
-                list = define.split('=', 1)
-                val = list[1]
-                if len(val)>=4 and val.startswith('\\"') and val.endswith('\\"'):
-                    val = val[1:-2] + '"'
-                self.defines[list[0]] = val
+                define, value = define.split('=', 2)
+                if len(value)>=4 and value.startswith('\\"') and value.endswith('\\"'): # replace \" surrounding with "
+                    value = value[1:-2] + '"'
+            self._defines[define] = value
 
     # add include path
     def add_include(self, dir):
-        dir = self.normalize_path(dir)
-        if dir not in self.includes:
+        dir = Path.normalize(dir)
+        if dir not in self._includes:
             if self.verbose:
                 print('add include path: %s' % dir)
-            self.includes.append(dir)
+            self._includes.append(dir)
 
     # add all files from dir with the given extensions
     def add_dir(self, dir, extensions):
-        dir = self.normalize_path(dir)
+        dir = Path.normalize(dir)
         if not path.isdir(dir):
             raise RuntimeError('not a directory: %s' % dir)
         for root, subdirs, files in os.walk(dir):
@@ -176,51 +204,49 @@ class FileCollector:
                             self.add_file(path.join(root, file))
 
     # add single file
-    def add_file(self, file_path):
-        file_path = self.normalize_path(file_path)
-        if not path.isfile(file_path):
-            raise RuntimeError('not a file: %s' % file_path)
-        if self.check_filters(file_path, False)==FilterType.INCLUDE:
-            if file_path in self.files:
-                file = self.files[file_path]
-                if file.update()==ModifiedType.UNMODIFIED:
-                    if self.verbose:
-                        print('unmodified file: %s' % file.file)
-                else:
-                    print('modified file: %s' % file.file)
-            else:
-                file = File(file_path)
-                file.update()
-                file.type = ModifiedType.NEW
-                self._modified = True
-                self.files[file.file] = file
-                if self.verbose:
-                    print('new file: %s' % file.file)
-        else:
-            if file_path in self.database:
-                if self.verbose:
-                    print('file removed: %s' % file_path)
-                self.files[file_path].remove()
-                self._modified = True
+    def add_file(self, filename):
+        filename = Path.normalize(filename)
+        if not path.isfile(filename):
+            raise RuntimeError('not a file: %s' % filename)
+        if self.check_filters(filename, False)==FilterType.INCLUDE:
+            stat = os.stat(filename)
+            file = {'size': stat.st_size, 'mtime': stat.st_mtime}
+            self._files[filename] = self.hash_file(filename, file)
 
-    @property
-    def files(self):
-        return self.database['files']
+    def prepare_filter_path(self, name, base_path, type):
+        # get trailing slash or backslash before normalizing
+        is_dir = name.endswith('/') or name.endswith('\\')
+        if base_path and not path.isabs(name):
+            name = path.join(base_path, name)
+        name = Path.normalize(name)
+        if is_dir:
+            if type=='exclude':
+                # add * or replace . for directories to exclude subdirectories
+                if path.basename(name)=='.':
+                    name = path.join(path.dirname(name), '*')
+                elif path.basename(name)!='*':
+                    name = path.join(name, '*')
+            elif type=='include':
+                # add . to directories
+                name = path.join(name, '.')
+        return name
 
-    @property
-    def output(self) -> OutputFiles:
-        return self.output_files
+    # add file or directory to the source exclude filter
+    def add_src_filter_include(self, name, base_path=None):
+        self._filter_includes.append(self.prepare_filter_path(name, base_path, 'include'))
+
+    # add file or directory to the source include filter
+    def add_src_filter_exclude(self, name, base_path=None):
+        self._filter_excludes.append(self.prepare_filter_path(name, base_path, 'exclude'))
 
     # read database
     def read_database(self):
         self._modified = False
-        self.database = {
-            'files': {},
-            'includes': [],
-            'defines': {},
-            'filters': {},
-            'output_files': {}
-        }
+        self._database = Database()
+        self._files = {}
+        self._includes = []
+        self._filter_includes = []
+        self._filter_excludes = []
         if not self.database_file:
             if self.verbose:
                 print('database filename not set')
@@ -237,22 +263,17 @@ class FileCollector:
             if contents:
                 database = json.loads(contents)
                 try:
-                    files = self.files
-                    for item in database['files']:
-                        hash = None
-                        if hash in item and File.COMPARE==CompareType.HASH:
-                            hash = item['hash']
-                        file = File(item['file'], item['size'], item['mtime'], hash)
-                        if file.update()!=ModifiedType.UNMODIFIED:
-                            self._modified = True
-                        files[file.file] = file
+                    files = {}
+                    for name, item in database['files'].items():
+                        files[Path.normalize(name)] = item
 
-                    self.database.update({
-                        'includes': database['includes'],
-                        'defines': database['defines'],
-                        'filters': database['filters'],
-                        'output_files': database['output_files']
-                    })
+                    self._database._files = files
+                    self._database._includes = Path.normalize(database['includes'])
+                    self._database._defines = database['defines']
+                    self._database._filter_includes = Path.normpath(database['filters']['include'])
+                    self._database._filter_excludes = Path.normpath(database['filters']['exclude'])
+                    self._database._output_files = OutputFiles._fromdict(database['output_files'])
+
                 except KeyError as e:
                     if self.verbose:
                         print('ignoring error %s' % e)
@@ -265,82 +286,96 @@ class FileCollector:
                 print('database filename not set')
             return
         database = {
-            'files': {},
-            'includes': self.includes,
-            'defines': self.defines,
-            'filters': self.filters,
-            'output_files': self.output_files._todict()
+            'files': self._database._files,
+            'includes': self._database._includes,
+            'defines': self._database._defines,
+            'filters': {
+                'include': self._database._filter_includes,
+                'exclude': self._database._filter_excludes
+            },
+            'output_files': self._database._output_files._todict()
         }
-        for pathname, file in database['files']:
-            self.files[pathname] = file._todict()
+        # files = database['files']
+        # for path, file in self._database_files:
+        #     files[path] = file._todict()
+
         with open(self.database_file, 'wt') as f:
-            f.write(json.dumps(database))
+            f.write(json.dumps(database, indent=4))
 
-    # add normalized output files
-    def add_output_files(self, output_declare, output_define, output_static):
-        self.output_files = OutputFiles(output_declare, output_define, output_static)
-
-    # check database for modifications
-    def check_database(self):
-        if self.filters!=self.database['filters']:
+    # update database and mark as modified if there were any changes
+    def update_database(self):
+        if self.is_different(self._files, self.database._files):
             if self.verbose:
-                print('filters have been modified')
-            self.modified = True
-        if self.includes!=self.database['includes']:
+                print('files have been modified')
+            self._modified = True
+            for name, item in self._files.items():
+                if name in self.database._files:
+                    if self.is_different(item, self.database._files[name]):
+                        self.modified_files[name] = item
+                    if self.verbose:
+                        print('modified: %s' % name)
+                else:
+                    self.modified_files[name] = item
+                    if self.verbose:
+                        print('new: %s' % name)
+            self.database._files = self._files
+        if self.is_different(self._includes, self.database._includes):
             if self.verbose:
                 print('includes have been modified')
-            self.modified = True
-        if self.output_files._todict()!=self.database['output_files']:
+            self._modified = True
+            self.database._includes = self._includes
+        if self.is_different(self._defines, self.database._defines):
             if self.verbose:
-                print('output files have been modified')
+                print('defines have been modified')
+            self._modified = True
+            self.database._defines = self._defines
+        if self.is_different(self._filter_includes, self.database._filter_includes):
+            if self.verbose:
+                print('filter includes have been modified')
+            self._modified = True
+            self.database._filter_includes = self._filter_includes
+        if self.is_different(self._filter_excludes, self.database._filter_excludes):
+            if self.verbose:
+                print('filter excludes have been modified')
+            self._modified = True
+            self.database._filter_excludes = self._filter_excludes
+        if self.is_different(self._output_files._todict(), self.database._output_files._todict()):
+            if self.verbose:
+                print('output files have changed')
+            self._modified = True
+            self.database._output_files = self._output_files
+            self.modified = True
+        elif not self._output_files.exist():
+            if self.verbose:
+                print('output files do not exist')
             self.modified = True
 
-    # add file or directory to the source exclude filter
-    def add_src_filter_include(self, dir, base_path = None):
-        if base_path:
-            dir = path.join(base_path, dir)
-        self.filters['include'].append(self.normalize_path(dir))
-
-    # add file or directory to the source include filter
-    def add_src_filter_exclude(self, dir, base_path = None):
-        if base_path:
-            dir = path.join(base_path , dir)
-        self.filters['exclude'].append(self.normalize_path(dir))
-
-    def normalize_filter_path(self, filter_path):
-        if path.basename(filter_path)=='*':
-            return path.join(path.dirname(filter_path), '.')
-        # filter_path = filter_path.rstrip('/\\')
-        # if filter_path[-1]!='*':
-        #     filter_path = path.join(filter_path, '.')
-        return filter_path
+        del self._files
+        del self._includes
+        del self._defines
+        del self._filter_includes
+        del self._filter_excludes
+        del self._output_files
 
     # check if a file or directory matches the source filter
-    def check_filters(self, path, is_dir):
+    def check_filters(self, name, is_dir):
         debug = False
         if is_dir:
-            path = os.path.join(path, '.')
+            name = os.path.join(name, '.')
+        # path_parts = self.create_compare_partial_path_parts(path)
         filter = FilterType.NO_MATCH
-        for filter_path in self.filters['include']:
-            if not is_dir and filter_path.endswith(os.sep + '.'):
-                continue
-            if is_dir:
-                filter_path = self.normalize_filter_path(filter_path)
+        for filter_path in self._filter_includes:
             if debug:
-                print('include %s=%s' % (filter_path, fnmatch.fnmatch(filter_path, filter_path)))
-            if fnmatch.fnmatch(filter_path, filter_path):
+                print('include %s=%s pattern=%s' % (name, fnmatch.fnmatch(name, filter_path), filter_path))
+            if fnmatch.fnmatch(name, filter_path):
                 filter = FilterType.INCLUDE
                 break
-        for filter_path in self.filters['exclude']:
-            if not is_dir and filter_path.endswith(os.sep + '.'):
-                continue
-            if is_dir:
-                filter_path = self.normalize_filter_path(filter_path)
+        for filter_path in self._filter_excludes:
             if debug:
-                print('exclude %s=%s' % (filter_path, fnmatch.fnmatch(path, filter_path)))
-            if fnmatch.fnmatch(path, filter_path):
+                print('exclude %s=%s pattern=%s' % (name, fnmatch.fnmatch(name, filter_path), filter_path))
+            if fnmatch.fnmatch(name, filter_path):
                 filter = FilterType.EXCLUDE
                 break
         if debug:
-            print('filter=%s is_dir=%s path=%s' % (filter, is_dir, path))
+            print('filter=%s is_dir=%s path=%s' % (filter, is_dir, name))
         return filter

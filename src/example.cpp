@@ -14,6 +14,8 @@ PROGMEM_STRING_DEF(0, "0");
 PROGMEM_STRING_DEF(1, "1");
 PROGMEM_STRING_DEF(test_str, TEST_STRING);
 
+#include "example.h"
+
 // storing strings inside the code
 FLASH_STRING_GENERATOR_AUTO_INIT(
     AUTO_STRING_DEF(AutoInitExample, "test default lang", en_EN: "test en_EN", it_IT: "tests it_IT")

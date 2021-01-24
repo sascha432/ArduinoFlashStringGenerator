@@ -15,7 +15,7 @@ import tempfile
 def subst_list_non_empty(list):
     return [env.subst(x.strip()) for x in list if x.strip() != '']
 
-def build_spgm(source, target, env):
+def build_spgm(source, target, env, force=False):
 
     # use flash generatored from .. where extra_scripts.py is locatated
     script = path.realpath(path.join(path.dirname((inspect.getfile(inspect.currentframe()))), 'flashstringgen.py'))
@@ -30,6 +30,8 @@ def build_spgm(source, target, env):
         '-d', env.subst("$PROJECT_SRC_DIR"),
         '-@', args_file.name
     ]
+    if force:
+        args.append('--force')
 
     verbose = False
     if int(ARGUMENTS.get("PIOVERBOSE", 0)):
@@ -122,5 +124,8 @@ def build_spgm(source, target, env):
         print('flashstringgen.py failed to run: ' + str(return_code))
         sys.exit(return_code)
 
-env.AlwaysBuild(env.Alias("build_spgm", None, build_spgm))
+def rebuild_spgm(source, target, env):
+    build_spgm(source, target, env, True)
+
 env.AlwaysBuild(env.Alias("buildspgm", None, build_spgm))
+env.AlwaysBuild(env.Alias("rebuildspgm", None, rebuild_spgm))

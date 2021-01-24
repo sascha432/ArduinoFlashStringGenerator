@@ -6,7 +6,7 @@ import sys
 import os
 import json
 import copy
-from typing import Iterable
+import typing
 from .item import Item, ItemType, DefinitionType, DebugType
 
 class Generator:
@@ -112,7 +112,7 @@ class Generator:
                 elif type=='define':
                     file.write('#include "FlashStringGeneratorAuto.h"\n')
 
-                for item in (i for i in self._merged.values() if type=='static' or i.static):
+                for item in (i for i in self._merged.values() if type!='static' or i.static):
                    if item.type==ItemType.FROM_SOURCE:
                         if item.has_locations:
                             if self.config_locations_one_per_line:
@@ -135,7 +135,7 @@ class Generator:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
         return num
 
-    def find_items_by_name(self, item1, types=(ItemType.FROM_SOURCE,), compare=None) -> Iterable[Item]:
+    def find_items_by_name(self, item1, types=(ItemType.FROM_SOURCE,), compare=None) -> typing.Iterable[Item]:
         return (item2 for item2 in self.items if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2)))
 
     def _compare_values(self):
@@ -235,7 +235,7 @@ class Generator:
             self._merged = tmp
 
     @property
-    def items(self) -> Iterable[Item]:
+    def items(self) -> typing.Iterable[Item]:
         return self._items
 
     def clear_items(self):

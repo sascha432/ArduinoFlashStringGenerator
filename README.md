@@ -180,6 +180,10 @@ Building flash strings for the provided example:
 
 `pio run -t buildspgm -e example`
 
+Forcing a rebuild without any changes detected:
+
+`pio run -t rebuildspgm -e example`
+
 After that it can be compiled and uploaded:
 
 `pio run -t upload -e example`

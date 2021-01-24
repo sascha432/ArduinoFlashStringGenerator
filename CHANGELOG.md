@@ -2,9 +2,10 @@
 
 ## 0.0.3 (work-in-progress)
 
+- Fixed file collector
+- Added rebuild option (--force)
 - Fixed issues with pcpp 1.22
-- Refactoring some code
-- Reorganized file structure
+- Reorganized file structure and refactored code
 - Added missing include in FlashStringGeneratorAuto.cpp
 - Fixed passing CPPDEFINES in extra_script.py
 - Adding defines for known BOARD_MCU

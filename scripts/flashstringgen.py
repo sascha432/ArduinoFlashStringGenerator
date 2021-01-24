@@ -4,9 +4,10 @@
 
 import sys
 from os import path
+import glob
 import argparse
 import traceback
-from generator import Item, DebugType, Generator, FileCollector, ModifiedType, FlashStringPreprocessor
+from generator import Item, DebugType, Generator, FileCollector, CompareType, FlashStringPreprocessor
 
 class ArgfileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -37,6 +38,7 @@ parser.add_argument("--database", help="Storage database file", default=".flashs
 parser.add_argument("--config", "--output-translate", help="Config file", default="FlashStringGeneratorAuto.json")
 parser.add_argument("--output-dir", help="Directory for config and outout files", default=".")
 parser.add_argument("--force", help="Force rebuild if no changes are detected", action="store_true", default=False)
+parser.add_argument("--hash", help="Use file hashes instead of modification time to detect changes", action="store_true", default=False)
 parser.add_argument("-v", "--verbose", help="Verbose output", action="store_true", default=False)
 parser.add_argument("-n", "--dry-run", help="Do not write any output files", action="store_true", default=False)
 parser.add_argument("-D", "--define", help="Define macro", action='append', default=[])
@@ -58,7 +60,8 @@ try:
     if args.i18n:
         parser.error("--i18n: currently not supported yet")
 
-    # args.verbose = True
+    if args.hash:
+        FileCollector.COMPARE = CompareType.HASH
 
     args.output_declare = FileCollector.prepend_dir(args.output_dir, args.output_declare)
     args.output_define = FileCollector.prepend_dir(args.output_dir, args.output_define)
@@ -67,8 +70,6 @@ try:
     args.database = FileCollector.prepend_dir(args.output_dir, args.database)
 
     fc = FileCollector(args.database, args.config, args.verbose)
-
-    generator = Generator()
 
     # read database and check for modifications
     fc.read_database()
@@ -91,58 +92,72 @@ try:
     for dir in args.source_dir:
         fc.add_dir(dir, args.ext)
 
+    fc.parse_defines(args.define)
+
+    fc.output_files = (args.output_declare, args.output_define, args.output_static)
+
+    for include in args.include_path:
+        fc.add_include(include)
+
+    # update database and mark as modified if there were any changes
+    fc.update_database()
+
     if not fc.files:
         raise RuntimeError('No source files found')
 
-    fc.parse_defines(args.define)
+    generator = Generator()
 
     # read the translation file
     generator.read_config_json(fc.config_file)
 
     if args.verbose:
-        print("Extensions: " + str(args.ext))
-        print("Modified: " + str(fc.modified))
-        print("Files: %u" % len(fc.files))
-        print("Output declare: " + args.output_declare)
-        print("Output define: " + args.output_define)
-        print("Output static: " + args.output_static)
-        print("Config file: " + args.config)
-        print("Filter include/exclude: %u/%u" % (len(fc.filters['include']), len(fc.filters['exclude'])))
-        print("Defines: %u" % len(fc.defines))
-        print("Includes: %u" % len(args.include_path))
+        print('Extensions: %s' % (args.ext))
+        print('Modified: %s' % (fc.modified))
+        print('Files: %u' % (len(fc.files)))
+        print('Output declare: %s' % (fc.database.output_files.declare))
+        print('Output define: %s' % (fc.database.output_files.define))
+        print('Output static: %s' % (fc.database.output_files.static))
+        print('Config file: %s' % (fc.config_file))
+        print('Filter include: %u' % (len(fc.database.filter_includes)))
+        print('Filter exclude: %u' % (len(fc.database.filter_excludes)))
+        print('Defines: %u' % len(fc.database.defines))
+        print('Includes: %u' % len(fc.database.includes))
         print()
 
     verbose("Processing files...")
 
     # create preprocessor
     fcpp = FlashStringPreprocessor()
-    for define, value in fc.defines.items():
+    for define, value in fc.database.defines.items():
         if args.verbose:
             print('define %s=%s' % (define, value))
         fcpp.define('%s %s' % (define, value))
 
-    for include in args.include_path:
+    for include in fc.database.includes:
         fcpp.add_path(include)
-        fc.add_include(include)
 
-    fc.add_output_files(args.output_declare, args.output_define, args.output_static)
+    fcpp.add_ignore_include(fc.output_files.declare)
+    fcpp.add_ignore_include(fc.output_files.define)
+    fcpp.add_ignore_include(fc.output_files.static)
 
-    fcpp.add_ignore_include(fc.output.declare)
-    fcpp.add_ignore_include(fc.output.define)
-    fcpp.add_ignore_include(fc.output.static)
+    for exclude in fc.database.filter_excludes:
+        for file in glob.glob(exclude):
+            if path.isfile(file):
+                fcpp.add_ignore_include(file)
 
-    for exclude in fc.filters['exclude']:
-        fcpp.add_ignore_include(exclude)
+    if args.force:
+        fc.modified_files = fc.database._files
+        fc._modified = True
 
-    if not args.force and not fc.modified:
+    if not fc.modified or not fc.modified_files:
         print('No changes detected')
         sys.exit(0)
 
+
     # add modified files
     input = ''
-    for pathname, file in fc.files.items():
-        if file.type!=ModifiedType.UNMODIFIED:
-            input = input + "#include \"" + pathname + "\"\n"
+    for pathname, file in fc.modified_files.items():
+        input = input + "#include \"" + path.abspath(pathname) + "\"\n"
 
         # if files[file]['state']!='-':  #and (args.force or files[file]['state']!=''):
         #     # if args.verbose:
@@ -174,7 +189,7 @@ try:
 
     if args.verbose:
         for item in generator.items:
-            print('%s %s=%s' % (item.type, item.name, item.value))
+            print('%s="%s" in %s' % (item.name, item.value, item.get_source(path.basename(fc.config_file))))
 
     print('%u strings created' % num)
 

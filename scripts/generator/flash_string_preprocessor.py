@@ -5,7 +5,6 @@
 import sys
 import os
 from os import path
-from . import generator
 from . import Item
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
@@ -64,9 +63,10 @@ class FlashStringPreprocessor(Preprocessor):
                 raise OutputDirective(Action.IgnoreAndPassThrough)
         elif directive.value=='include':
             for path in self.path:
-                include_file = os.path.realpath(os.path.join(path, self.tokens_to_string(toks)))
-                if os.path.isfile(include_file):
-                    if include_file in self.ignore_includes:
+                if not os.path.isabs(path):
+                    path = os.path.abspath(os.path.join(path, self.tokens_to_string(toks)))
+                if os.path.isfile(path):
+                    if path in self.ignore_includes:
                         raise OutputDirective(Action.IgnoreAndPassThrough)
         return super(FlashStringPreprocessor, self).on_directive_handle(directive, toks, ifpassthru, precedingtoks)
 

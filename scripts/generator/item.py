@@ -85,10 +85,10 @@ class SourceLocation(object):
                 if location.source==source and location.lineno==lineno:
                     self.locations.remove(location)
 
-    # returns source:linenno or <config>
-    def get_source(self):
+    # returns source:lineno or <config>
+    def get_source(self, config_file='<config>'):
         if self.type==ItemType.FROM_CONFIG:
-            return '<config>'
+            return config_file
         return '%s:%u' % (self._source, self._lineno)
 
     @property
@@ -191,14 +191,6 @@ class i18n(object):
     def get(self, lang):
         return self.translations[lang]
 
-    # # find returns None if the lang does not exist
-    # def find(self, lang):
-    #     if lang in self.translations:
-    #         print('find',lang,self.get(lang))
-    #         return (lang, self.get(lang))
-    #     print('find = None',lang)
-    #     return (None, None)
-
     def set(self, lang, value):
         item = i18n_lang(lang, value)
         for lang in item.lang:
@@ -210,7 +202,6 @@ class i18n(object):
         del self.arg
 
     def merge(self, merge_item):
-        # print('merge trans',self.translations,merge_item.translations.items())
         for lang, item in merge_item.items():
             if not lang in self.translations:
                 self.translations[lang] = item
