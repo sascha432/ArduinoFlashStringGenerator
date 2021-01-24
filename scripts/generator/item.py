@@ -66,9 +66,6 @@ class Location(object):
     def __hash__(self):
         return hash(self.__str__())
 
-    def list(self):
-        return [self.source, self.lineno, self.definition_type]
-
 class SourceLocation(object):
 
     display_source = SourceType.REL_PATH
@@ -87,6 +84,12 @@ class SourceLocation(object):
             for location in self.locations:
                 if location.source==source and location.lineno==lineno:
                     self.locations.remove(location)
+
+    # returns source:linenno or <config>
+    def get_source(self):
+        if self.type==ItemType.FROM_CONFIG:
+            return '<config>'
+        return '%s:%u' % (self._source, self._lineno)
 
     @property
     def source(self):
@@ -345,7 +348,7 @@ class Item(SourceLocation):
         return ''
 
     def remove(self):
-        SourceLocation.remove(self, self.source, self.lineno)
+        SourceLocation.remove(self, self._source, self._lineno)
         self._source = None
         self._lineno = ItemType.REMOVED
 
@@ -487,13 +490,9 @@ class Item(SourceLocation):
         res = 'type=%s name=%s value="%s"' % (self.definition_type.value, self.name, self.value)
         if self.i18n.translations:
             res +=' i18n=%s' % self.i18n.__repr__()
-        if self.type==ItemType.FROM_SOURCE:
-            res += ' source=%s:%u' % (self.source, self.lineno)
-        elif self.type==ItemType.FROM_CONFIG:
-            res += ' source=<config>'
         if self.has_auto_value:
             res += ' <auto_value>'
-        res += ' use_counter=%u' % self.use_counter
+        res += ' use_counter=%u source=%s' % (self.use_counter, self.get_source())
         if self.has_locations:
             res += ' locations="%s"' % self.get_locations_str(sep=',')
         res += ' static=%s' % self.static

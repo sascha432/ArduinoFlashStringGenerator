@@ -6,6 +6,7 @@ import sys
 import os
 import json
 import copy
+from typing import Iterable
 from .item import Item, ItemType, DefinitionType, DebugType
 
 class Generator:
@@ -111,10 +112,8 @@ class Generator:
                 elif type=='define':
                     file.write('#include "FlashStringGeneratorAuto.h"\n')
 
-                for item in self._merged.values():
-                    if type=='static' and not item.static:
-                        pass
-                    if item.type==ItemType.FROM_SOURCE:
+                for item in (i for i in self._merged.values() if type=='static' or i.static):
+                   if item.type==ItemType.FROM_SOURCE:
                         if item.has_locations:
                             if self.config_locations_one_per_line:
                                 file.write(item.get_locations_str(sep='', fmt='// %s\n'))
@@ -136,44 +135,29 @@ class Generator:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
         return num
 
-    def find_items_by_name(self, item1, types=(ItemType.FROM_SOURCE,), compare=None):
-        # tmp = []
-        # for item2 in self._items:
-        #     # if item1.is_type(item2, types):
-        #     #     print('find %s %s %s' % (types, item1, item2))
-        #     if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2)):
-        #         tmp.append(item2)
-
-
-        return [item2 for item2 in self._items if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2))]
+    def find_items_by_name(self, item1, types=(ItemType.FROM_SOURCE,), compare=None) -> Iterable[Item]:
+        return (item2 for item2 in self.items if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2)))
 
     def _compare_values(self):
-        for item1 in self._items:
-            for item2 in self.find_items_by_name(item1, compare=lambda item1, item2: (item1.has_value and item2.has_value and item1.value!=item2.value)):
-                print('--')
-                print(item1)
-                print(item2)
-                print('--')
-                raise RuntimeError('redefinition with different value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
-                    (item1.name, item1.value, item1.source, item1.lineno, \
-                    item2.value, item2.source, item2.lineno))
+        for item1 in self.items:
+            for item2 in self.find_items_by_name(item1, compare=lambda item1, item2: (item1.type!=ItemType.FROM_CONFIG and item1.has_value and item2.has_value and item1.value!=item2.value)):
+                raise RuntimeError('redefinition with different value %s="%s" in %s previous definition: "%s" in %s' % \
+                    (item1.name, item1.value, item1.get_source(), item2.value, item2.get_source()))
 
     def _compare_i18n(self):
-        for item1 in self._items:
-            for item2 in self._items:
-                for l1, d1 in item1.i18n.items():
-                    for l2, d2 in item2.i18n.items():
-                        if id(d1)!=id(d2):
-                            for lang in d1.lang:
-                                if lang in d2.lang and d1.value!=d2.value:
-                                    raise RuntimeError('redefinition with different i18n value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
-                                        (item1.name, d1.value, item1.source, item1.lineno, \
-                                        d2.value, item2.source, item2.lineno))
+        for item1 in self.items:
+            for item2 in (i for i in self.items if id(i)!=id(item1)):
+                for d1 in item1.i18n.values():
+                    for d2 in (d for d in item2.i18n.values() if id(d)!=id(d1)):
+                        if d1.value!=d2.value:
+                            for lang in (l for l in d1.lang if l in d2.lang):
+                                raise RuntimeError('redefinition with different i18n value %s="%s" in %s previous definition: "%s" in %s' % \
+                                    (item1.name, d1.value, item1.get_source(), d2.value, item2.get_source()))
 
     def _merge_items(self, types=(ItemType.FROM_SOURCE,), merge_types=(ItemType.FROM_SOURCE,)):
-        for item1 in self._items:
-            if not item1.type in types:
-                continue
+        for item1 in (item for item in self.items if item.type in types):
+            # if not item1.type in types:
+            #     continue
 
             # add item to merged list
             if not item1.name in self._merged:
@@ -195,15 +179,13 @@ class Generator:
                 # item2.remove()
                 self._items.remove(item2)
 
-    def _update_items(self):
-        # check for missing values and add if possible
-        for item1 in self._items:
-            if item1.type in(ItemType.FROM_SOURCE, ItemType.FROM_CONFIG) and item1.value==None:
-                for item2 in self.find_items_by_name(item1):
-                    if item2.value!=None:
-                        raise RuntimeError('item without value %s: %s' % (item2, item1))
-                        # item1.value = item2.value
-                        # break
+    # def _update_items(self):
+    #     # check for missing values and add if possible
+    #     for item1 in self.items:
+    #         if item1.type in(ItemType.FROM_SOURCE, ItemType.FROM_CONFIG) and item1.value==None:
+    #             for item2 in self.find_items_by_name(item1):
+    #                 if item2.value!=None:
+    #                     raise RuntimeError('item without value %s: %s' % (item2, item1))
 
     def merge_items(self, items):
         self._items.extend(items)
@@ -224,8 +206,8 @@ class Generator:
         self._merge_items(types=(ItemType.FROM_CONFIG,), merge_types=(ItemType.FROM_CONFIG,))
         self._dump_merged('after _merge_items_from_config')
 
-        self._update_items()
-        self._dump_merged('after _update_items')
+        # self._update_items()
+        # self._dump_merged('after _update_items')
 
     def _dump(self, name):
         if DebugType.DUMP_ITEMS in Item.DEBUG:
@@ -245,7 +227,7 @@ class Generator:
         if DebugType.DUMP_ITEMS in Item.DEBUG:
             tmp = self._merged
             self._merged = {}
-            for item in self._items:
+            for item in self.items:
                 if not item.name in self._merged:
                     self._merged[item.name] = []
                 self._merged[item.name].append(item)
@@ -253,14 +235,14 @@ class Generator:
             self._merged = tmp
 
     @property
-    def items(self):
+    def items(self) -> Iterable[Item]:
         return self._items
 
     def clear_items(self):
-        self._items = {}
+        self._items = []
 
     def dump(self):
-        for item in self._items:
+        for item in self.items:
             print(str(item))
 
     def dump_merged(self):
@@ -269,6 +251,6 @@ class Generator:
                 if item:
                     print(item[0].name)
                     for item2 in item:
-                        print('  '+str(item2))
+                        print('  %s' % item2)
             else:
                 print(str(item))

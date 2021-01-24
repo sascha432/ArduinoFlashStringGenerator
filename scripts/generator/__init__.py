@@ -5,5 +5,5 @@
 
 from .generator import Generator
 from .item import Item, ItemType, ItemType, DefinitionType, DebugType
-from .file_collector import FileCollector
+from .file_collector import FileCollector, ModifiedType
 from .flash_string_preprocessor import FlashStringPreprocessor

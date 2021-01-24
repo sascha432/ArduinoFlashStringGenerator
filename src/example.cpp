@@ -31,9 +31,8 @@ void loop() {
     auto example1 = SPGM(Example1);
     Serial.print(example1);
     Serial.print(FSPGM(Example2));
-    Serial.print(FSPGM(Example3));
-    // Serial.print(FSPGM(Example3, "Inline Example 3"));
-    // Serial.print(FSPGM(Example3, "Inline Example 3")); // same definition is required
+    Serial.print(FSPGM(Example3, "Inline Example 3"));
+    Serial.print(FSPGM(Example3, "Inline Example 3")); // redefintion requires same value
     Serial.print(FSPGM(mime_type_text_html));
     Serial.print(FSPGM(index_html, "index.html"));
     Serial.print(FSPGM(New_string));
@@ -48,6 +47,6 @@ void loop() {
     Serial.print(FSPGM(New_string_3));
     char buffer[32];
     snprintf_P(buffer, sizeof(buffer), SPGM(CURRENCY, "%.2f", en-US:"$%.2f", en_CA:"CA$%.2f",en_au:"AU$%.2f",de;es;it;fr:"%.2fEUR"), 1.5);
-    Serial.print(FSPGM(CURRENCY, "%.2f", de;bg: "%.2fEUR"));
+    Serial.print(FSPGM(CURRENCY, "%.2f", de;bg: "%.2fEUR")); // redefintion merges translations
     delay(1000);
 }
