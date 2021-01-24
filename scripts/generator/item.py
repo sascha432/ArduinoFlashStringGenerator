@@ -98,6 +98,11 @@ class SourceLocation(object):
 
     @source.setter
     def source(self, source):
+        if source==None:
+            self._source = None
+            return
+        if not source:
+            raise RuntimeError('source is an empty string')
         if SourceLocation.display_source==SourceType.REL_PATH:
             self._source = source
             return
@@ -236,7 +241,11 @@ class Item(SourceLocation):
 
     DEFAULT_LANGUAGE = 'default'
 
-    def __init__(self, definition_type=DefinitionType.DEFINE, source=None, lineno=ItemType.FROM_CONFIG, name=None, item=None):
+    # source/lineno             filename and line or None and ItemType
+    # name                      name of the item
+    # item                      used internally for the parser to verify that item is None
+    # config_data               unmodified json data from the configuration file
+    def __init__(self, definition_type=DefinitionType.DEFINE, source=None, lineno=None, name=None, item=None, config_data=None):
         SourceLocation.__init__(self, source, lineno)
         if item!=None:
             raise RuntimeError('item not None: %s' % item)
@@ -254,6 +263,7 @@ class Item(SourceLocation):
         self.name = name
         self._value = None
         self._auto = None
+        self._config_data = config_data
 
     def __eq__(self, o: object) -> bool:
         return id(self) == id(o)

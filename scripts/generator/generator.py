@@ -41,7 +41,7 @@ class Generator:
                                         raise RuntimeError('invalid configuration key: %s: type: %s: expected: %s: %s' % (key, type(val), type(self._config[key]), filename))
                                     self._config[key] = val
                                 continue
-                            item = Item(name=name)
+                            item = Item(name=name, lineno=ItemType.FROM_CONFIG, config_data=data)
                             if 'default' in data:
                                 item._value = data['default']
                             elif 'auto' in data:
@@ -150,6 +150,10 @@ class Generator:
     def _compare_values(self):
         for item1 in self._items:
             for item2 in self.find_items_by_name(item1, compare=lambda item1, item2: (item1.has_value and item2.has_value and item1.value!=item2.value)):
+                print('--')
+                print(item1)
+                print(item2)
+                print('--')
                 raise RuntimeError('redefinition with different value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
                     (item1.name, item1.value, item1.source, item1.lineno, \
                     item2.value, item2.source, item2.lineno))
