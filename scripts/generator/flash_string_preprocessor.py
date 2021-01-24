@@ -20,7 +20,7 @@ class FlashStringPreprocessor(Preprocessor):
     def __init__(self):
         super(FlashStringPreprocessor, self).__init__()
         self.define("FLASH_STRINGS_AUTO_INIT 1")
-        self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTO_INIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTO_INIT_FLASH_STRING_END)")
+        self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)")
         self.define("SPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
         self.define("FSPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
@@ -168,10 +168,10 @@ class FlashStringPreprocessor(Preprocessor):
             #print toks[0].lineno,
             for tok in toks:
                 if tok.type=='CPP_ID' and tok.value.startswith('__INTERNAL_') and tok.value.endswith('_FLASH_STRING_START'):
-                    parts = tok.value.split('_', 5)
-                    type = parts[4]!='FLASH' and ('%s_%s' % (parts[3], parts[4])) or parts[3]
-                    item = Item(item, type, self.source, self.lineno)
-                elif tok.type=='CPP_ID' and tok.value in('__INTERNAL_SPGM_FLASH_STRING_END','__INTERNAL_DEFINE_FLASH_STRING_END', '__INTERNAL_AUTO_INIT_FLASH_STRING_END'):
+                    parts = tok.value.split('_', 4)
+                    type = parts[3]=='AUTOINIT' and 'AUTO_INIT' or parts[3]
+                    item = Item(type, self.source, self.lineno, item=item)
+                elif tok.type=='CPP_ID' and tok.value in('__INTERNAL_SPGM_FLASH_STRING_END','__INTERNAL_DEFINE_FLASH_STRING_END', '__INTERNAL_AUTOINIT_FLASH_STRING_END'):
                     item = self.add_item(item)
                 elif item!=None:
                     if tok.type=='CPP_STRING':
@@ -195,7 +195,6 @@ class FlashStringPreprocessor(Preprocessor):
         if item.has_value_buffer:
             item.push_value()
         item.validate()
-        print('%s' % item.info())
         item.cleanup()
         self._items.append(item)
         return None

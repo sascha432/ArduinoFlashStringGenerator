@@ -2,4 +2,9 @@
 tmp
 __pycache__
 .vscode
-src/generated
+src/generated/FlashStringGeneratorAuto.h
+src/generated/FlashStringGeneratorAuto.cpp
+src/generated/.flashstringgen
+src/generated/FlashStringGeneratorAuto.static.txt
+debug_args.txt
+output.txt

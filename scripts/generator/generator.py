@@ -6,60 +6,95 @@ import sys
 import os
 import json
 import copy
-from .item import Item
+from .item import Item, ItemType, DefinitionType, DebugType
 
 class Generator:
 
     def __init__(self):
         self._items = []
         self._merged = {}
-        # self.translate = {}
-        # self.defined = {}
-        # self.used = {}
-        # self.locations = {}
+        self._config = {
+            'locations_one_per_line': False
+        }
 
-    def beautify(self, name):
-        name = name.replace('_', ' ')
-        return name
+    @property
+    def config_locations_one_per_line(self):
+        return self._config['locations_one_per_line']
 
     def read_config_json(self, filename):
-        self.translate = {}
         if os.path.exists(filename):
             try:
                 with open(filename, 'rt') as file:
-                    contents = file.read().strip();
+                    contents = ''
+                    for line in file.readlines():
+                        line = line.strip()
+                        if line.startswith('#') or line.startswith('//') or not line:
+                            continue
+                        contents += line + '\n'
                     if contents:
                         for name, data in json.loads(contents).items():
+                            if name=='__FLASH_STRING_GENERATOR_CONFIG__':
+                                for key, val in data.items():
+                                    if not key in self._config:
+                                        raise RuntimeError('invalid configuration key: %s: %s' % (key, filename))
+                                    if type(val)!=type(self._config[key]):
+                                        raise RuntimeError('invalid configuration key: %s: type: %s: expected: %s: %s' % (key, type(val), type(self._config[key]), filename))
+                                    self._config[key] = val
+                                continue
                             item = Item(name=name)
                             if 'default' in data:
                                 item._value = data['default']
                             elif 'auto' in data:
-                                item._value = data['auto']
-                                item.auto = True
+                                item._auto = data['auto']
                             if 'i18n' in data:
                                 for lang, value in data['i18n'].items():
                                     item.i18n.set(lang, value)
+                            if DebugType.DUMP_READ_CONFIG in Item.DEBUG:
+                                print('read_config_json %s' % item)
                             self._items.append(item)
+            except RuntimeError as e:
+                raise e
             except Exception as e:
                 raise RuntimeError("cannot read %s: %s" % (filename, e))
 
-        # reset counters
-        for name in self.translate:
-            self.translate[name]['use_counter'] = 0
-
     def write_config_json(self, filename):
+        out = {
+            '__FLASH_STRING_GENERATOR_CONFIG__': self._config
+        }
+        trans = []
+        for item in self._merged.values():
+            val = {
+                'use_counter': item.use_counter,
+            }
+            if item.has_value:
+                val['default'] = item.value
+            if item.auto_value:
+                if item._auto!=None:
+                    val['auto'] = item._auto
+                else:
+                    val['auto'] = item.beautify(item.name)
+            for data in item.i18n.values():
+                if not id(data) in trans:
+                    if not 'i18n' in val:
+                        val['i18n'] = {}
+                    trans.append(id(data))
+                    val['i18n'][';'.join(data.lang)] = data.value
+            if item.has_locations:
+                val['locations'] = item.get_locations_str(',')
+            out[item.name] = val
+
         try:
             with open(filename, 'wt') as file:
-                # file.write(json.dumps(self.translate, indent=4))
-                pass
+                contents = json.dumps(out, indent=4)
+                file.write('// It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file\n')
+                file.write(contents)
+                if DebugType.DUMP_WRITE_CONFIG in Item.DEBUG:
+                    print(contents)
+
         except Exception as e:
             raise RuntimeError("cannot write %s: %s" % (filename, e))
 
     def write(self, filename, type, include_file = None):
-        # if type=='static':
-        #     items = self.defined
-        # else:
-        #     items = self.used
         num = 0
         try:
             with open(filename, 'wt') as file:
@@ -75,22 +110,22 @@ class Generator:
                     ])
                 elif type=='define':
                     file.write('#include "FlashStringGeneratorAuto.h"\n')
-                for item in self._merged.values():
-                    if item.is_valid and not item.removed and (type=='static')==item.static:
-                        name = item.name
-                    # item = items[string]
-                    # if (type=='static' and item['static']==True) or item['static']==False:
-                        # name = item['name']
-                        # if name in self.locations:
-                        #     for location in self.locations[name]:
 
-                        if item.locations:
-                            file.write('// %s' % item.locations_str)
+                for item in self._merged.values():
+                    if type=='static' and not item.static:
+                        pass
+                    if item.type==ItemType.FROM_SOURCE:
+                        if item.has_locations:
+                            if self.config_locations_one_per_line:
+                                file.write(item.get_locations_str(sep='', fmt='// %s\n'))
+                            else:
+                                file.write('// %s\n' % item.locations_str)
                         num = num + 1
                         if type=='header':
-                            file.write('PROGMEM_STRING_DECL(%s);\n' % (name))
+                            file.write('PROGMEM_STRING_DECL(%s);\n' % (item.name))
                         else:
-                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (name, item.value))
+                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (item.name, item.value))
+
                 if type=="header":
                     file.writelines([
                         '#ifdef __cplusplus\n',
@@ -101,85 +136,117 @@ class Generator:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
         return num
 
-    def find_items(self, name, item_self=None, return_removed=False):
-        return [item for item in self._items if (return_removed or not item.removed) and (item.name==name) and (item_self==None or id(item)!=id(item_self))]
+    def find_items_by_name(self, item1, types=(ItemType.FROM_SOURCE,), compare=None):
+        # tmp = []
+        # for item2 in self._items:
+        #     # if item1.is_type(item2, types):
+        #     #     print('find %s %s %s' % (types, item1, item2))
+        #     if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2)):
+        #         tmp.append(item2)
 
-    def find_lang(self, name, lang, item_self=None):
-        for item in self.find_items(name, item_self):
-            res = item.i18n.find(lang)
-            if res:
-                return res
-        return None
+
+        return [item2 for item2 in self._items if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2))]
+
+    def _compare_values(self):
+        for item1 in self._items:
+            for item2 in self.find_items_by_name(item1, compare=lambda item1, item2: (item1.has_value and item2.has_value and item1.value!=item2.value)):
+                raise RuntimeError('redefinition with different value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
+                    (item1.name, item1.value, item1.source, item1.lineno, \
+                    item2.value, item2.source, item2.lineno))
+
+    def _compare_i18n(self):
+        for item1 in self._items:
+            for item2 in self._items:
+                for l1, d1 in item1.i18n.items():
+                    for l2, d2 in item2.i18n.items():
+                        if id(d1)!=id(d2):
+                            for lang in d1.lang:
+                                if lang in d2.lang and d1.value!=d2.value:
+                                    raise RuntimeError('redefinition with different i18n value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
+                                        (item1.name, d1.value, item1.source, item1.lineno, \
+                                        d2.value, item2.source, item2.lineno))
+
+    def _merge_items(self, types=(ItemType.FROM_SOURCE,), merge_types=(ItemType.FROM_SOURCE,)):
+        for item1 in self._items:
+            if not item1.type in types:
+                continue
+
+            # add item to merged list
+            if not item1.name in self._merged:
+                if DebugType.DUMP_MERGE_ITEMS in Item.DEBUG:
+                    print('merge create %s' % item1)
+                self._merged[item1.name] = item1
+
+            # merge all other items into merged list
+            for item2 in self.find_items_by_name(item1, merge_types):
+                # print notice if an item is defined multiple times
+                if item1.type!=ItemType.FROM_CONFIG and item2.type!=ItemType.FROM_CONFIG and item1.has_value and item2.has_value and item1.value==item2.value:
+                    print('NOTICE: redefinition of %s="%s" in %s:%u first definition in %s:%u' % (item1.name, item2.name, item1.source, item1.lineno, item2.source, item2.lineno))
+
+                if DebugType.DUMP_MERGE_ITEMS in Item.DEBUG:
+                    print('merge merge %s into %s' % (item2, item1))
+                item1.merge(item2)
+                self._merged[item1.name] = item1
+
+                # item2.remove()
+                self._items.remove(item2)
+
+    def _update_items(self):
+        # check for missing values and add if possible
+        for item1 in self._items:
+            if item1.type in(ItemType.FROM_SOURCE, ItemType.FROM_CONFIG) and item1.value==None:
+                for item2 in self.find_items_by_name(item1):
+                    if item2.value!=None:
+                        raise RuntimeError('item without value %s: %s' % (item2, item1))
+                        # item1.value = item2.value
+                        # break
 
     def merge_items(self, items):
+        self._items.extend(items)
         self._merged = {}
-        for item in items:
-            if item.removed:
-                continue
-            for item2 in self.find_items(item.name, item, True):
+        self._dump_grouped('start')
 
-                # print("N",item2.name,item2._use_counter)
-                # print("X",item2)
+        # self._remove_auto_values_and_fill_blanks()
+        # self._dump_grouped('after _remove_auto_values_and_fill_blanks')
 
-                # check if the item is defined multiple times
-                if not item2.removed and not item.from_config_file and not item2.from_config_file and item.type in(Item.ItemType.DEFINE, Item.ItemType.AUTO_INIT) and item2:
-                    print('WARNING: redefinition of %s="%s" in %s:%u first definition in %s:%u' % (item.name, item2.name, item.source, item.lineno, item2.source, item2.lineno))
+        self._compare_values()
+        self._compare_i18n()
 
-                # check for invalid redefinitions and merge default values
-                cmp_item = self.compare_values(item, item2)
-                if cmp_item:
-                    raise RuntimeError('redefinition with different value %s="%s" in %s:%u previous definition: "%s" in %s:%u' % \
-                        (item.name, item.value, item.source, item.lineno, \
-                        cmp_item.value, item2.source, item2.lineno))
+        # merge items from source first and override everything from the config file
+        self._merge_items()
+        self._dump_merged('_merge_items')
 
-                # # TODO remove debug code
-                # item = copy.deepcopy(item)
-                # item2 = copy.deepcopy(item2)
+        # merge items from config
+        self._merge_items(types=(ItemType.FROM_CONFIG,), merge_types=(ItemType.FROM_CONFIG,))
+        self._dump_merged('after _merge_items_from_config')
 
-                item.merge(item2)
+        self._update_items()
+        self._dump_merged('after _update_items')
 
-                if item.has_use_counter:
-                    if item.type==Item.ItemType.SPGM:
-                        item.use_counter += 1
-                    if item2.has_use_counter:
-                        item.copy_counter(item2)
+    def _dump(self, name):
+        if DebugType.DUMP_ITEMS in Item.DEBUG:
+            print('-'*76)
+            print('%s:' % name)
+            self.dump()
+            print('-'*76)
 
-                if item.has_locations and item2.has_locations:
-                    item.copy_locations(item2)
+    def _dump_merged(self, name):
+        if DebugType.DUMP_ITEMS in Item.DEBUG:
+            print('-'*76)
+            print('%s:' % name)
+            self.dump_merged()
+            print('-'*76)
 
-                self._merged[item.name] = item
-
-            # add item to list
-            self._items.append(item)
-
-    def compare_values(self, item1, item2):
-        if item1.removed or item2.removed or \
-                item1.from_config_file or item2.from_config_file or \
-                item1==item2:
-            return None
-        if item1.has_value and item2.has_value and item1._value!=item2._value:
-            return item2
-        for l1, i1 in item1.i18n.items():
-            for l2, i2 in item2.i18n.items():
-                # //TODO
-                print(l1,l2,i1,i2)
-        return None
-
-    def update_items(self):
-        # check for missing values and add if possible
-        for item in self._items:
-            if item.removed:
-                continue
-            if item.value==None:
-                for item2 in self.find_items(item.name, item):
-                    if item2.value!=None:
-                        item.value = item2.value
-                        break
-        # create values automatically and mark them
-        for item in self._items:
-            if item.value==None:
-                item.value = self.beautify(item.name)
-                item.auto = True
+    def _dump_grouped(self, name):
+        if DebugType.DUMP_ITEMS in Item.DEBUG:
+            tmp = self._merged
+            self._merged = {}
+            for item in self._items:
+                if not item.name in self._merged:
+                    self._merged[item.name] = []
+                self._merged[item.name].append(item)
+            self._dump_merged(name)
+            self._merged = tmp
 
     @property
     def items(self):
@@ -194,23 +261,10 @@ class Generator:
 
     def dump_merged(self):
         for item in self._merged.values():
-            print(str(item))
-
-    # def use_counter(self, name):
-    #     n = 0
-    #     for item in self._items:
-    #         if item.unused==False and item.type==self.SPGM and item.name==name:
-    #             n += 1
-    #     return n
-
-    # def get_value(self, item):
-    #     name = item.name
-    #     if item.default_value!=None:
-    #         return item.default_value
-    #     if name in self.translate.keys():
-    #         trans = self.translate[name]
-    #         if 'default' in trans.keys():
-    #             return trans['default']
-    #         elif 'auto' in trans.keys():
-    #             return trans['auto']
-    #     return item['value']
+            if isinstance(item, list):
+                if item:
+                    print(item[0].name)
+                    for item2 in item:
+                        print('  '+str(item2))
+            else:
+                print(str(item))

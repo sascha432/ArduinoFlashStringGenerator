@@ -42,6 +42,18 @@ The tool will create the PROGMEM string automatically if it is not statically.
 
 `SPGM(id)` (const char \*) or `FSPGM(id)` (const __FlashStringHelper \*)
 
+### Using FLASH_STRING_GENERATOR_AUTO_INIT macro
+
+This works like (F)SPGM and can be used to store strings centralized. Unlike PROGMEM_STRING_DECL/PROGMEM_STRING_DEF, strings are not declared or defined until the tool has been executed
+
+```
+FLASH_STRING_GENERATOR_AUTO_INIT(
+    AUTO_STRING_DEF(ping_monitor_response, "%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms")
+    AUTO_STRING_DEF(ping_monitor_end_response, "Total answer from %s sent %d recevied %d time %ld ms")
+    AUTO_STRING_DEF(CURRENCY, "%.2f", en_US: "$%.2f", ch;es;fr;de;it: "%.2fEUR")
+);
+```
+
 ### Modifying the text
 
 The tool will try to create a beautified version of the name.
@@ -103,21 +115,32 @@ It will scan all source files in .\src, except ignore_me.cpp and create the file
 
 ### FlashStringGeneratorAuto.json
 
-To modify the content of the strings, edit the .json file and run the tool again. If the default is defined in the source code, it cannot be changed in this file.
+#### Configuration options
+
+These are stored under the key __FLASH_STRING_GENERATOR_CONFIG__
+
+#### Translations
+
+The name of the string as key and contains all its information. If the default is defined in the source code, it cannot be changed in this file.
+
+It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file. If a string is defined in the source code, the definition in the file will be updated silently
 
 ```
     "Example1": {                   # id of the string
         "auto": "Example1",         # this is the value the tool assigns automatically
-                                    # once "default" is set, this value will be removed
+                                    # rename or add default to remove it
         "use_counter": 2,           # shows how often this id is being used
-        "default": "Example #1"     # overwrite it with this
+        "default": "Example #1"
+        # translations
         "i18n": {
             "en-US": "Example #1 US version",
             "en-CA": "Example #1 CA version",
             "en-GB": "Example #1 GB version",
             "de-CH": "Beispiel #1",
             "fr-CH": "Exemple #1"
-        }
+        },
+        # source and linen number where the string is defined or used
+        "locations": "src/example.cpp:40,src/example.cpp:45,src/example.cpp:47"
     },
     "CURRENCY": {
         "default": "%.2f",

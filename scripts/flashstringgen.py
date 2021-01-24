@@ -9,10 +9,7 @@ import argparse
 import json
 import time
 import traceback
-from generator import Item
-from generator import Generator
-from generator import FileCollector
-from generator import FlashStringPreprocessor
+from generator import Item, DebugType, Generator, FileCollector, FlashStringPreprocessor
 
 class ArgfileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -176,20 +173,12 @@ try:
 
         fcpp.find_strings()
 
-        if Item.DebugType.DUMP_ITEMS in Item.DEBUG:
-            print('-'*76)
-            print('items before merge')
-            print('-'*76)
-            generator.dump()
-
         generator.merge_items(fcpp.items)
-        generator.update_items()
 
-        if Item.DebugType.DUMP_ITEMS in Item.DEBUG:
-            print('-'*76)
-            print('merged items')
-            print('-'*76)
+        if DebugType.DUMP_ITEMS in Item.DEBUG:
+            print('merged items:')
             generator.dump_merged()
+            print('-'*76)
 
         # create the auto generated files
         if args.dry_run:
@@ -204,18 +193,16 @@ try:
             fc.write_database()
 
         if args.verbose:
-            used = generator.get_used()
-            for string in used:
-                item = used[string]
-                if item['static']:
+            for item in generator.items:
+                if item.static:
                     type = 'static'
-                elif 'default' in item:
-                    type = 'default'
-                else:
+                elif item.has_auto_value:
                     type = 'auto'
-                print(type + ' ' + item['name'] + '=' + generator.get_value(item))
+                else:
+                    type = 'default'
+                print('%s %s=%s' % (type, item.name, item.value))
 
-        print(str(num) + " strings created")
+        print('%u strings created' % num)
 
     else:
         print("No changes detected")

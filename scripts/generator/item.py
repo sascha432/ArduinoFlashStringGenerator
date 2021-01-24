@@ -7,19 +7,37 @@ import os
 import copy
 import enum
 
-class Location(object):
-    def __init__(self, source, lineno):
-        self.source = source
-        self.lineno = lineno
+class ItemType(enum.Enum):
+    FROM_SOURCE = 0
+    FROM_CONFIG = -1
+    REMOVED = -2
 
-    def __eq__(self, o: object) -> bool:
-        return id(self)==id(o) or (self.lineno>=0 and o.lineno>=0 and self.source==o.source and self.lineno==o.lineno)
+    def __str(self):
+        return str(self).split('.')[-1]
+
+class DefinitionType(enum.Enum):
+    DEFINE = 'DEFINE'
+    SPGM = 'SPGM'
+    AUTO_INIT = 'AUTO_INIT'
 
     def __str__(self):
-        return '%s:%u' % (self.source, self.lineno)
+        if self==DefinitionType.DEFINE:
+            return 'PROGMEM_STRING_DEF'
+        if self==DefinitionType.AUTO_INIT:
+            return 'AUTO_STRING_DEF'
+        return str(self.value).split('.')[-1]
 
-    def __repr__(self):
-        return '<%s %s:%u at %X>' % (self.__class__.__qualname__, self.source, self.lineno, int(id(self)))
+class DebugType(enum.Enum):
+    TOKEN = 'token'
+    PUSH_VALUE = 'push_value'
+    DUMP_ITEMS = 'dump_items'
+    EXCEPTION = 'exception'
+    ITEM_DEBUG_ATTR = 'item_debug_attr'
+    DUMP_READ_CONFIG = 'dump_read_config'
+    DUMP_WRITE_CONFIG = 'dump_write_config'
+    DUMP_MERGE_ITEMS = 'dump_merge_items'
+
+ITEM_DEBUG = frozenset([DebugType.EXCEPTION])
 
 class SourceType(enum.Enum):
     REL_PATH = 'rel'
@@ -27,18 +45,53 @@ class SourceType(enum.Enum):
     REAL_PATH = 'real'
     FILENAME = 'filename'
 
+class Location(object):
+    def __init__(self, source, lineno, definition_type):
+        self.source = source
+        self.lineno = lineno
+        self.definition_type = definition_type
+
+    def __eq__(self, o: object) -> bool:
+        return id(self)==id(o) or (isinstance(self.lineno, int) and isinstance(o.lineno, int) and self.source==o.source and self.lineno==o.lineno)
+
+    def __ne__(self, o: object) -> bool:
+        return not self.__eq__(o)
+
+    def __str__(self):
+        return '%s:%u (%s)' % (self.source, self.lineno, self.definition_type.__str__())
+
+    def __repr__(self):
+        return '<%s %s:%u %s at %X>' % (self.__class__.__qualname__, self.source, self.lineno, str(self.definition_type), int(id(self)))
+
+    def __hash__(self):
+        return hash(self.__str__())
+
+    def list(self):
+        return [self.source, self.lineno, self.definition_type]
+
 class SourceLocation(object):
 
     display_source = SourceType.REL_PATH
 
     def __init__(self, source, lineno):
         self.source = source
-        self._lineno = int(lineno)
-        self._use_counter = Counter()
-        self.locations = [Location(self.source, self.lineno)]
+        self.lineno = lineno
+        self.locations = []
+
+    def append(self, source, lineno, definition_type):
+        if isinstance(lineno, int) and source!=None:
+            self.locations.append(Location(source, lineno, definition_type))
+
+    def remove(self, source, lineno):
+        if isinstance(lineno, int) and source!=None:
+            for location in self.locations:
+                if location.source==source and location.lineno==lineno:
+                    self.locations.remove(location)
 
     @property
     def source(self):
+        if isinstance(self._lineno, ItemType):
+            return None
         if SourceLocation.display_source==SourceType.FILENAME:
             return os.path.basename(self._source)
         return self._source
@@ -47,26 +100,41 @@ class SourceLocation(object):
     def source(self, source):
         if SourceLocation.display_source==SourceType.REL_PATH:
             self._source = source
-        elif SourceLocation.display_source==SourceType.REAL_PATH:
+            return
+        if SourceLocation.display_source==SourceType.REAL_PATH:
             self._source = os.path.realpath(source)
-        else:
-            self._source = os.path.abspath(source)
+            return
+        self._source = os.path.abspath(source)
 
     @property
     def full_source(self):
+        if isinstance(self._lineno, ItemType):
+            return None
         return self._source
 
     @property
     def lineno(self):
+        if isinstance(self._lineno, ItemType):
+            return 0
         return self._lineno
 
     @lineno.setter
     def lineno(self, lineno):
-        if not isinstance(lineno, int):
-            raise RuntimeError('lineno not int: %s' % type(lineno))
-            self._lineno = int(lineno)
-            return
+        if not isinstance(lineno, (int, ItemType)):
+            raise RuntimeError('lineno not (int, ItemType): %s' % type(lineno))
         self._lineno = lineno
+
+    @property
+    def type(self):
+        if isinstance(self._lineno, int):
+            return ItemType.FROM_SOURCE
+        return self._lineno
+
+    @type.setter
+    def type(self, value):
+        if value==ItemType.FROM_SOURCE and not isinstance(self._lineno, int):
+            raise RuntimeError('type=FROM_SOURCE not possible, use lineno=<int>')
+        self.lineno = value
 
 # stores translations with a list of languages
 class i18n_lang(object):
@@ -85,7 +153,7 @@ class i18n_lang(object):
         return self.value
 
     def __str__(self):
-        return '[%s]: %s' % (','.join(self.lang), self.value)
+        return '[%s]: "%s"' % (','.join(self.lang), self.value)
 
 # stores all translations in a dictionary with the name as key
 class i18n(object):
@@ -115,27 +183,27 @@ class i18n(object):
     def get(self, lang):
         return self.translations[lang]
 
-    # find returns None if the lang does not exist
-    def find(self, lang):
-        if lang in self.translations:
-            print('find',lang,self.get(lang))
-            return (lang, self.get(lang))
-        print('find = None',lang)
-        return (None, None)
+    # # find returns None if the lang does not exist
+    # def find(self, lang):
+    #     if lang in self.translations:
+    #         print('find',lang,self.get(lang))
+    #         return (lang, self.get(lang))
+    #     print('find = None',lang)
+    #     return (None, None)
 
     def set(self, lang, value):
         item = i18n_lang(lang, value)
         for lang in item.lang:
-            if lang in self.translations and value!=self.translations[lang]:
+            if lang in self.translations and value!=self.translations[lang].value:
                 raise RuntimeError('cannot redefine value %s for %s: previous value %s' % (value, lang, self.translations[lang]))
             self.translations[lang] = item
 
     def cleanup(self):
         del self.arg
-        # self.translations = self._create_new_list()
 
     def merge(self, merge_item):
-        for lang, item in merge_item.translations.items():
+        # print('merge trans',self.translations,merge_item.translations.items())
+        for lang, item in merge_item.items():
             if not lang in self.translations:
                 self.translations[lang] = item
         merge_item.translations = self.translations
@@ -146,6 +214,9 @@ class i18n(object):
     def items(self):
         return self.translations.items()
 
+    def values(self):
+        return self.translations.values()
+
     def __repr__(self):
         return self.__str__(True)
 
@@ -153,75 +224,42 @@ class i18n(object):
         items = []
         for lang, item in self.items():
             if repr:
-                items.append('%s: %s' % (lang, item.__repr__()))
+                items.append('%s: "%s"' % (lang, item.__repr__()))
             else:
                 items.append(item.__str__())
         return ' '.join(items)
 
-class Counter(object):
-    def __init__(self, value=0):
-        self._counter = value
-
-    def __eq__(self, o: object) -> bool:
-        return id(self) == id(o)
-
-    @property
-    def counter(self):
-        return self._counter
-
-    @counter.setter
-    def counter(self, value):
-        self._counter = value
-
-class ItemType(enum.Enum):
-    DEFINE = 'DEFINE'
-    SPGM = 'SPGM'
-    AUTO_INIT = 'AUTO_INIT'
-
-class DebugType(enum.Enum):
-    TOKEN = 'token'
-    PUSH_VALUE = 'push_value'
-    DUMP_ITEMS = 'dump_items'
-    EXCEPTION = 'exception'
-
 class Item(SourceLocation):
 
-    ItemType = ItemType
-
     DebugType = DebugType
-    DEBUG = frozenset([DebugType.DUMP_ITEMS, DebugType.EXCEPTION])
+    DEBUG = ITEM_DEBUG
 
     DEFAULT_LANGUAGE = 'default'
 
-    def __init__(self, item=None, type=ItemType.DEFINE, source=None, lineno=-1, name=None):
+    def __init__(self, definition_type=DefinitionType.DEFINE, source=None, lineno=ItemType.FROM_CONFIG, name=None, item=None):
         SourceLocation.__init__(self, source, lineno)
         if item!=None:
             raise RuntimeError('item not None: %s' % item)
-        if isinstance(type, str):
-            type = ItemType(type)
-        if not type in(ItemType.DEFINE, ItemType.SPGM, ItemType.AUTO_INIT):
-            raise RuntimeError('invalid type: %s' % type)
-        self.type = type
+        if isinstance(definition_type, str):
+            definition_type = DefinitionType(definition_type)
+        if not isinstance(definition_type, DefinitionType):
+            raise RuntimeError('invalid definition_type: %s' % definition_type)
+        self.definition_type = definition_type
+        SourceLocation.append(self, source, lineno, definition_type)
+        self._static = definition_type==DefinitionType.DEFINE
         self._lang = self.DEFAULT_LANGUAGE
         self._value_buffer = None
         self.i18n = i18n(self)
         self._arg_num = 0
         self.name = name
         self._value = None
-        self.auto = False
-        self.unused = lineno==-1
-        self._static = type in(ItemType.DEFINE, ItemType.AUTO_INIT)
+        self._auto = None
 
     def __eq__(self, o: object) -> bool:
         return id(self) == id(o)
 
-    @property
-    def removed(self):
-        return self.lineno==-2
-
-    def remove(self):
-        self.name + '$$$REMOVED$$$ ' + self.name
-        self.lineno = -2
+    def __ne__(self, o: object) -> bool:
+        return not self.__eq__(o)
 
     @property
     def has_value(self):
@@ -229,21 +267,27 @@ class Item(SourceLocation):
 
     @property
     def value(self):
+        if self._auto!=None:
+            return self._auto
         if self._value==None:
             return self.beautify(self.name)
         return self._value
 
     @property
-    def is_valid(self):
-        return self._lineno>=0
+    def has_auto_value(self):
+        return self._auto!=None or self._value==None
 
     @property
-    def is_invalid(self):
-        return self._lineno<0
+    def auto_value(self):
+        return self._auto
 
     @property
-    def from_config_file(self):
-        return self.lineno==-1 and self.source==None
+    def state(self):
+        if isinstance(self._lineno, ItemType):
+            return self._lineno
+        if isinstance(self._lineno, int):
+            return ItemType.FROM_SOURCE
+        raise RuntimeError('invalid state')
 
     @property
     def arg_num(self):
@@ -254,7 +298,7 @@ class Item(SourceLocation):
         self._arg_num = num
         if num>0 and self.name==None:
             raise RuntimeError('Name missing: %s' % (self))
-        elif num>1 and self.type in(ItemType.DEFINE, ItemType.AUTO_INIT) and self._value==None:
+        elif num>1 and self.definition_type in(DefinitionType.DEFINE, DefinitionType.AUTO_INIT) and self._value==None:
             raise RuntimeError('Value missing: %s' % (self))
 
     # get current language
@@ -289,6 +333,11 @@ class Item(SourceLocation):
         if self.has_value_buffer:
             return self._value_buffer
         return ''
+
+    def remove(self):
+        SourceLocation.remove(self, self.source, self.lineno)
+        self._source = None
+        self._lineno = ItemType.REMOVED
 
     def push_value(self):
         if Item.DebugType.PUSH_VALUE in Item.DEBUG:
@@ -326,13 +375,16 @@ class Item(SourceLocation):
     def validate(self):
         if self.name==None:
             raise RuntimeError('Name/id missing: %s' % (self))
-        if self._value==None and self.type in(ItemType.DEFINE, ItemType.AUTO_INIT):
+        if self._value==None and self.definition_type in(DefinitionType.DEFINE, DefinitionType.AUTO_INIT):
             raise RuntimeError('Value missing: %s' % (self))
 
     def info(self, add_source=True):
-        res = 'type=%s name=%s value=%s i18n=%s' % (self.type, self.name, self._value, self.i18n.info())
+        res = 'type=%s name=%s value=%s i18n=%s' % (self.definition_type, self.name, self._value, self.i18n.info())
         if add_source:
-            res += ' source=%s:%u' % (self.source, self.lineno)
+            if isinstance(self._lineno, int):
+                res += ' source=%s:%u' % (self.source, self.lineno)
+            else:
+                res += ' source=%s' % self._lineno.value
         return res
 
     # cleanup object before storing
@@ -342,96 +394,100 @@ class Item(SourceLocation):
         del self._arg_num
         self.i18n.cleanup()
 
-    def merge(self, merge_item):
-        if merge_item._value!=None and self._value==None:
-            self._value = merge_item._value
-        if merge_item._static:
+    # returns True for
+    #
+    # item2=None:
+    #   self is not item1 and item1.type is in types
+    #
+    # Item2!=None:
+    #
+    #   item1 is not item2 and item1.state is in states and item2.state is in types
+    def is_type(self, item1, types=(ItemType.FROM_SOURCE, ItemType.FROM_CONFIG), item2=None):
+        if item2==None:
+            if id(item1)==id(self):
+                return False
+            return item1.type in types
+        if id(item1)==id(item2):
+            return False
+        return item1.type in types and item2.type in types
+
+    def merge(self, item):
+        self._merge_value(item)
+        self._merge_auto_value(item)
+        self._merge_type(item)
+        self._merge_i18n(item)
+        self._merge_locations(item)
+
+    def _merge_value(self, item):
+        if item._value!=None and self._value==None:
+            self._value = item._value
+        pass
+
+    def _merge_auto_value(self, item):
+        if item._auto!=None and self._value==None and self._auto==None:
+            self._auto = item._auto
+        elif self._auto!=None and item._value==None and item._auto==None:
+            item._auto = self._auto
+
+    def _merge_type(self, item):
+        if self._static or item._static:
             self._static = True
-        if self._static:
-            merge_item._static = True
-        # merge translations and keep single copy
-        self.i18n.merge(merge_item.i18n)
-        merge_item.i18n = self.i18n
+            item._static = True
 
-    # add counters and replace both with the same object
-    def copy_counter(self, item):
-        if not hasattr(self, '_use_counter') or not hasattr(item, '_use_counter') or id(self._use_counter)==id(item._use_counter):
-            return
-        self._use_counter.counter += item._use_counter.counter
-        item._use_counter = self._use_counter
+    def _merge_i18n(self, item):
+        self.i18n.merge(item.i18n)
+        item.i18n = self.i18n
 
-    # add locations from item, remove duplicates and store the same object in both items
-    def copy_locations(self, item):
-        if self.is_invalid or item.is_invalid or \
-            not item.has_locations or not self.has_locations or \
-            id(self.locations)==id(item.locations):
+    def _merge_locations(self, item):
+        if not self.is_type(item, (ItemType.FROM_SOURCE,)) or not item.has_locations:
             return
-        tmp = []
-        # tmp.extend(self.locations)
-        for item2 in self.locations:
-            tmp.append(item2)
-        for item2 in item.locations:
-            if item!=item2:
-                # if not item2 in self.locations:
-                print('COPY APPEND',item2.__repr__(),item.__repr__())
-                tmp.append(item2)
-        if len(tmp)==0:
-            return
-        # tmp.extend(item.locations)
-        # tmp = set(tmp)
+        tmp = self.locations.copy()
+        tmp.extend(item.locations)
         self.locations.clear()
-        self.locations.extend(tmp)
-        # for item in tmp:
-        #     self.locations.append(tmp)
+        self.locations.extend(sorted(set(tmp), key=lambda l: (l.source, l.lineno)))
         item.locations = self.locations
 
     @property
-    def has_use_counter(self):
-        return hasattr(self, '_use_counter')
-
-    @property
     def use_counter(self):
-        return self._use_counter.counter
-
-    @use_counter.setter
-    def use_counter(self, value):
-        self._use_counter.counter = value
-        # if isinstance(type(value), Counter):
-        #     if id(value)!=id(self._use_counter):
-        #         value.counter += self._use_counter.counter
-        #         self._use_counter = value
-        # else:
-        #     self._use_counter.counter += value
+        n = 0
+        if self.locations:
+            for location in self.locations:
+                if location.definition_type==DefinitionType.SPGM:
+                    n += 1
+        return n
 
     @property
     def has_locations(self):
-        return hasattr(self, 'locations')
+        return hasattr(self, 'locations') and len(self.locations)>0
 
     @property
     def locations_str(self):
         return self.get_locations_str()
 
+    def get_locations_str(self, sep=', ', fmt='%s'):
+        if self.locations:
+            return sep.join([(fmt % l) for l in self.locations])
+        return ''
+
     @property
     def static(self):
         return self._static
 
-    def get_locations_str(self, sep=', ', fmt='%s'):
-        if not self.has_locations or not self.locations:
-            return ''
-        return sep.join([(fmt % l) for l in self.locations])
-
     def __str__(self):
-        res = 'type=%s name=%s value=%s' % (self.type._value_, self.name, self.value)
+        res = 'type=%s name=%s value="%s"' % (self.definition_type.value, self.name, self.value)
         if self.i18n.translations:
             res +=' i18n=%s' % self.i18n.__repr__()
-        res += ' source=%s:%u' % (self.source, self.lineno)
-        if hasattr(self, 'auto') or not self.has_value:
-            res += ' auto=True'
-        if self.has_use_counter:
-            res += ' use_counter=%u' % self.use_counter
+        if self.type==ItemType.FROM_SOURCE:
+            res += ' source=%s:%u' % (self.source, self.lineno)
+        elif self.type==ItemType.FROM_CONFIG:
+            res += ' source=<config>'
+        if self.has_auto_value:
+            res += ' <auto_value>'
+        res += ' use_counter=%u' % self.use_counter
         if self.has_locations:
-            res += ' locations=%s' % self.get_locations_str(sep=',')
-        if hasattr(self, '_lang'):
-            res +=  ' debug=%s' % {'lang': self.lang, 'args': self.arg_num, 'buffer': self._value_buffer}
-        res += ' static=%s' % self._static
+            res += ' locations="%s"' % self.get_locations_str(sep=',')
+        res += ' static=%s' % self.static
+
+        if DebugType.ITEM_DEBUG_ATTR in (self.DEBUG) and hasattr(self, '_lang'):
+            res +=  ' debug=%s' % {'lang': self.lang, 'args': self.arg_num, 'buffer': self._value_buffer, 'item_type': str(self.type)}
         return res

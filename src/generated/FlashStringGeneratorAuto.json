@@ -1,0 +1,97 @@
+// It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file
+{
+    "__FLASH_STRING_GENERATOR_CONFIG__": {
+        "locations_one_per_line": true
+    },
+    "Example1": {
+        "use_counter": 1,
+        "default": "Example 1",
+        "locations": "src/example.cpp:9 (PROGMEM_STRING_DEF),src/example.cpp:31 (SPGM)"
+    },
+    "Example2": {
+        "use_counter": 1,
+        "default": "Example 2",
+        "locations": "src/example.cpp:10 (PROGMEM_STRING_DEF),src/example.cpp:33 (SPGM)"
+    },
+    "UnusedStaticExample": {
+        "use_counter": 0,
+        "default": "UnusedStaticExample",
+        "locations": "src/example.cpp:11 (PROGMEM_STRING_DEF)"
+    },
+    "mime_type_text_html": {
+        "use_counter": 1,
+        "default": "text/html",
+        "locations": "src/example.cpp:12 (PROGMEM_STRING_DEF),src/example.cpp:37 (SPGM)"
+    },
+    "0": {
+        "use_counter": 1,
+        "default": "0",
+        "locations": "src/example.cpp:13 (PROGMEM_STRING_DEF),src/example.cpp:44 (SPGM)"
+    },
+    "1": {
+        "use_counter": 1,
+        "default": "1",
+        "locations": "src/example.cpp:14 (PROGMEM_STRING_DEF),src/example.cpp:45 (SPGM)"
+    },
+    "test_str": {
+        "use_counter": 0,
+        "default": "A test string",
+        "locations": "src/example.cpp:15 (PROGMEM_STRING_DEF)"
+    },
+    "AutoInitExample": {
+        "use_counter": 0,
+        "default": "test default lang",
+        "i18n": {
+            "en_EN": "test en_EN",
+            "it_IT": "tests it_IT"
+        },
+        "locations": "src/example.cpp:19 (AUTO_STRING_DEF)"
+    },
+    "Example3": {
+        "use_counter": 1,
+        "locations": "src/example.cpp:34 (SPGM)"
+    },
+    "index_html": {
+        "use_counter": 1,
+        "default": "index.html",
+        "locations": "src/example.cpp:38 (SPGM)"
+    },
+    "New_string": {
+        "use_counter": 2,
+        "locations": "src/example.cpp:39 (SPGM),src/example.cpp:42 (SPGM)"
+    },
+    "New_string_2": {
+        "use_counter": 1,
+        "locations": "src/example.cpp:40 (SPGM)"
+    },
+    "New_string_3": {
+        "use_counter": 3,
+        "default": "My NEW String 3",
+        "locations": "src/example.cpp:41 (SPGM),src/example.cpp:46 (SPGM),src/example.cpp:48 (SPGM)"
+    },
+    "new_string": {
+        "use_counter": 1,
+        "default": "new string lowercase",
+        "locations": "src/example.cpp:43 (SPGM)"
+    },
+    "New_string_unused": {
+        "use_counter": 1,
+        "locations": "src/example.cpp:47 (SPGM)"
+    },
+    "CURRENCY": {
+        "use_counter": 2,
+        "default": "%.2f",
+        "i18n": {
+            "en-US": "$%.2f",
+            "en_CA": "CA$%.2f",
+            "en_au": "AU$%.2f",
+            "de;fr;es;it": "%.2fEUR",
+            "de;bg": "%.2fEUR"
+        },
+        "locations": "src/example.cpp:50 (SPGM),src/example.cpp:51 (SPGM)"
+    },
+    "New_string_unused2": {
+        "use_counter": 0,
+        "default": "New string unused"
+    }
+}
