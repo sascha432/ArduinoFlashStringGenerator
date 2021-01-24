@@ -7,16 +7,39 @@ import os
 import json
 import copy
 import typing
+import re
 from .item import Item, ItemType, DefinitionType, DebugType
 
 class Generator:
 
-    def __init__(self):
+    def __init__(self, language=None):
+        self.language = language
         self._items = []
         self._merged = {}
         self._config = {
             'locations_one_per_line': False
         }
+
+    @property
+    def language(self):
+        return self._language
+
+    @language.setter
+    def language(self, language):
+        lang = []
+        if isinstance(language, str):
+            lang = [l for l in language.split(',')]
+        elif isinstance(language, (tuple, set, frozenset, list)):
+            lang = list(language)
+        if not 'default' in lang:
+            lang.append('default')
+        self._language = {}
+        for lang in [l.strip('"\' \t\r\n') for l in lang if l.strip('"\' \t\r\n')]:
+            lre = lang.lower()
+            if '*' in lang or '_' in lang or '-' in lang:
+                lre = re.sub('[_-]', '[_-]', lang.replace('*', '.*')) + r'\Z'
+            self._language[lang] = lre
+        print(self._language)
 
     @property
     def config_locations_one_per_line(self):
@@ -114,6 +137,8 @@ class Generator:
 
                 for item in (i for i in self._merged.values() if type!='static' or i.static):
                    if item.type==ItemType.FROM_SOURCE:
+                        p_lang, lang, value = item.get_value(self._language)
+                        print(p_lang, lang, value)
                         if item.has_locations:
                             if self.config_locations_one_per_line:
                                 file.write(item.get_locations_str(sep='', fmt='// %s\n'))
@@ -123,7 +148,7 @@ class Generator:
                         if type=='header':
                             file.write('PROGMEM_STRING_DECL(%s);\n' % (item.name))
                         else:
-                            file.write('PROGMEM_STRING_DEF(%s, "%s");\n' % (item.name, item.value))
+                            file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, value, lang))
 
                 if type=="header":
                     file.writelines([

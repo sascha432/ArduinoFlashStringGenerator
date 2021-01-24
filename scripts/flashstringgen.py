@@ -59,9 +59,6 @@ try:
     if args.args_from_file:
         args = parser.parse_args(sys.argv[1:] + args.args_from_file)
 
-    if args.i18n:
-        parser.error("--i18n: currently not supported yet")
-
     if args.hash:
         FileCollector.COMPARE = CompareType.HASH
 
@@ -107,7 +104,7 @@ try:
     if not fc.files:
         raise RuntimeError('No source files found')
 
-    generator = Generator()
+    generator = Generator(args.i18n)
 
     # read the translation file
     generator.read_config_json(fc.config_file)

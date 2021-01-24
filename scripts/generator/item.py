@@ -6,6 +6,9 @@
 import os
 import copy
 import enum
+import re
+
+DEFAULT_LANGUAGE = 'default'
 
 class ItemType(enum.Enum):
     FROM_SOURCE = 0
@@ -187,9 +190,17 @@ class i18n(object):
         for lang in item.lang:
             self.translations[lang] = item
 
-    # get raises an exception if lang does not exist
-    def get(self, lang):
-        return self.translations[lang]
+    def get(self, languages_regex):
+        for p_lang, lre in languages_regex.items():
+            for lang, obj in self.items():
+                if lre==DEFAULT_LANGUAGE:
+                    return None
+                elif lre.endswith(r'\Z'):
+                    if re.match(lre, lang, re.I):
+                        return (p_lang, lang, obj.value)
+                elif lang.lower()==lre:
+                    return (p_lang, lang, obj.value)
+        return None
 
     def set(self, lang, value):
         item = i18n_lang(lang, value)
@@ -233,7 +244,9 @@ class Item(SourceLocation):
     DebugType = DebugType
     DEBUG = ITEM_DEBUG
 
-    DEFAULT_LANGUAGE = 'default'
+    @property
+    def DEFAULT_LANGUAGE(self):
+        return DEFAULT_LANGUAGE
 
     # source/lineno             filename and line or None and ItemType
     # name                      name of the item
@@ -268,6 +281,12 @@ class Item(SourceLocation):
     @property
     def has_value(self):
         return self._value!=None
+
+    def get_value(self, lang_regex):
+        value = self.i18n.get(lang_regex)
+        if value!=None:
+            return value
+        return (self.DEFAULT_LANGUAGE, self.DEFAULT_LANGUAGE, self.value)
 
     @property
     def value(self):
@@ -357,7 +376,7 @@ class Item(SourceLocation):
                 self._value = None
         else:
             if self.arg_num % 2 == 0:
-                if self.lang not in(None, Item.DEFAULT_LANGUAGE):
+                if self.lang not in(None, self.DEFAULT_LANGUAGE):
                     raise RuntimeError('invalid language: %s' % (self))
                 if not self.has_value_buffer:
                     raise RuntimeError('language is None: %s' % self)
