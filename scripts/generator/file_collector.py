@@ -10,7 +10,7 @@ import sys
 import fnmatch
 import enum
 import hashlib
-import pathlib
+import glob
 from typing import Generic, Generator, Iterable, NewType, Sequence, List, Dict, Tuple, Union
 
 # File.COMPARE
@@ -191,17 +191,29 @@ class FileCollector(object):
                 print('add include path: %s' % dir)
             self._includes.append(dir)
 
+    def glob_recursive(self, dir):
+        return glob.glob(dir)
+
     # add all files from dir with the given extensions
     def add_dir(self, dir, extensions):
         dir = Path.normalize(dir)
-        if not path.isdir(dir):
-            raise RuntimeError('not a directory: %s' % dir)
-        for root, subdirs, files in os.walk(dir):
-            if self.check_filters(root, True)==FilterType.INCLUDE:
-                for file in files:
-                    for ext in extensions:
-                        if file.endswith(ext):
-                            self.add_file(path.join(root, file))
+        pattern = path.join(dir.rstrip('*'), '.')
+        if not glob.glob(pattern, recursive=False):
+            raise RuntimeError('not a directory: %s: pattern: %s' % (dir, pattern))
+
+        recursive = False
+        if dir.endswith('*'):
+            dir += '*'
+            recursive = True
+        elif not dir.endswith('/') and not dir.endswith('\\') and not dir.endswith('.'):
+            dir = path.join(dir, '*')
+        if '**' in dir:
+            recursive = True
+
+        for file in glob.glob(dir, recursive=recursive):
+            for ext in extensions:
+                if file.endswith(ext) and path.isfile(file) and self.check_filters(path.dirname(file), True)==FilterType.INCLUDE:
+                    self.add_file(file)
 
     # add single file
     def add_file(self, filename):

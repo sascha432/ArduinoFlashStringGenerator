@@ -18,7 +18,7 @@ PROGMEM_STRING_DEF(test_str, TEST_STRING);
 
 // storing strings inside the code
 FLASH_STRING_GENERATOR_AUTO_INIT(
-    AUTO_STRING_DEF(AutoInitExample, "test default lang", en_EN: "test en_EN", it_IT: "tests it_IT")
+    AUTO_STRING_DEF(AutoInitExample, "test default lang", en_EN: "test en_EN", it_IT: "tests it_IT", fr_FR: "fr_FR")
 );
 
 #define _STRINGIFY(...)                     ___STRINGIFY(__VA_ARGS__)

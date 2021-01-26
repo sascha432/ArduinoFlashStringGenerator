@@ -2,6 +2,7 @@
 
 ## 0.0.3 (work-in-progress)
 
+- source_dir changed to glob
 - Improved performance by including files only once
 - Fixed file collector
 - Added rebuild option (--force)

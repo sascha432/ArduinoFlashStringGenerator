@@ -48,7 +48,8 @@
         "default": "test default lang",
         "i18n": {
             "en_EN": "test en_EN",
-            "it_IT": "tests it_IT"
+            "it_IT": "tests it_IT",
+            "fr_FR": "fr_FR"
         },
         "locations": "src/example.cpp:21 (AUTO_STRING_DEF)"
     },
@@ -91,8 +92,8 @@
             "en-US": "$%.2f",
             "en_CA": "CA$%.2f",
             "en_au": "AU$%.2f",
-            "es;de;it;fr": "%.2fEUR",
-            "de;bg": "%.2fEUR"
+            "fr;de;es;it": "%.2fEUR",
+            "bg;de": "%.2fEUR"
         },
         "locations": "src/example.cpp:51 (SPGM),src/example.cpp:52 (SPGM)"
     },
