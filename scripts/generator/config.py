@@ -202,14 +202,11 @@ class SpgmConfig(object):
 
     @property
     def skip_includes(self):
-        return self._subst_list(self._get_string('skip_includes'), SubstListType.PATTERN)
+        return self._subst_list('%s\n%s' % (self.declaration_file,  self._get_string('skip_includes')), SubstListType.PATTERN)
 
     @property
     def source_excludes(self):
-        return self._subst_list(self._get_string('source_excludes'), SubstListType.PATTERN)
-
-    def get_source_excludes(env):
-        return SpgmConfig(env).source_excludes
+        return self._subst_list('%s\n%s\n%s' % (self.definition_file, self.declaration_file, self._get_string('source_excludes')), SubstListType.PATTERN)
 
     @property
     def declaration_include_file(self):
