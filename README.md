@@ -10,7 +10,7 @@ Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM
 
 WARNING! file is not up to date and there were major changes. check examples in platform.ini
 
-[Change Log v0.1.0](CHANGELOG.md)
+[Change Log v0.1.1](CHANGELOG.md)
 
 ## Requirements
 
