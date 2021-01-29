@@ -79,7 +79,7 @@ class Location(object):
         return str(tuple([self.source, str(self.lineno), str(self.definition_type.value)]))
 
     def __hash__(self):
-        return hash('%s;%s;%s;%s' % (id(self), self.source, self.lineno, self.definition_type.value))
+        return hash('%s;%s;%s' % (self.source, self.lineno, self.definition_type.value))
 
     def _totuple(self):
         return (self.source, int(self.lineno), str(self.definition_type.value))
@@ -91,17 +91,17 @@ class SourceLocation(object):
     def __init__(self, source, lineno):
         self.source = source
         self.lineno = lineno
-        self.locations = []
+        self._locations = []
 
     def append(self, source, lineno, definition_type):
         if isinstance(lineno, int) and source!=None:
-            self.locations.append(Location(source, lineno, definition_type))
+            self._locations.append(Location(source, lineno, definition_type))
 
     def remove(self, source, lineno):
         if isinstance(lineno, int) and source!=None:
-            for location in self.locations:
+            for location in self._locations:
                 if location.source==source and location.lineno==lineno:
-                    self.locations.remove(location)
+                    self._locations.remove(location)
 
     # def validate(self, source, lineno):
     #     return isinstance(lineno, int) and source!=None
@@ -280,7 +280,6 @@ class Item(SourceLocation):
             raise RuntimeError('invalid definition_type: %s' % definition_type)
         self.definition_type = definition_type
         SourceLocation.append(self, source, lineno, definition_type)
-        self._static = definition_type==DefinitionType.DEFINE
         self._lang = self.DEFAULT_LANGUAGE
         self._value_buffer = None
         self.i18n = i18n(self)
@@ -459,7 +458,6 @@ class Item(SourceLocation):
     def merge(self, item):
         self._merge_value(item)
         self._merge_auto_value(item)
-        self._merge_type(item)
         self._merge_i18n(item)
         self._merge_item_locations(item)
 
@@ -473,16 +471,11 @@ class Item(SourceLocation):
         # elif self._auto!=None and item._value==None and item._auto==None:
         #     item._auto = self._auto
 
-    def _merge_type(self, item):
-        if self._static or item._static:
-            self._static = True
-            item._static = True
-
     def _merge_i18n(self, item):
         self.i18n.merge(item.i18n)
         item.i18n = self.i18n
 
-    def _merge_locations(locations, merge):
+    def _merge_locations(locations, merge, build=None):
         if not isinstance(locations, list) or not isinstance(merge, list):
             raise RuntimeError('invalid type')
         # merge "merge" into "locations" and store sorted result in original "locations" list
@@ -491,32 +484,49 @@ class Item(SourceLocation):
         locations.extend(sorted(tmp, key=lambda l: (l.source, l.lineno)))
         return locations
 
+    def _merge_build_locations(self, build):
+        if self.use_counter==0 and not self.static:
+            return
+        locations = build.find(self.name)
+        if locations:
+            locations = Item._merge_locations(self._locations, locations).copy()
+
     def _merge_item_locations(self, item):
         if not self.is_type(item, (ItemType.FROM_SOURCE,)) or not item.has_locations:
             return
-        item.locations = Item._merge_locations(self.locations, item.locations)
+        Item._merge_locations(self._locations, item.locations)
 
     @property
     def use_counter(self):
-        return len([True for l in self.locations if l.definition_type==DefinitionType.SPGM])
-        # n = 0
-        # if self.locations:
-        #     for location in self.locations:
-        #         if location.definition_type==DefinitionType.SPGM:
-        #             n += 1
-        # return n
+        return len([True for l in self._locations if l.definition_type==DefinitionType.SPGM])
 
-    # @property
-    # def use_counter(self):
-    #     return self._locations.use_counter
+    @property
+    def static(self):
+        # l = [str(l) for l in self._locations if l.definition_type==DefinitionType.DEFINE]
+        # if len(l)!=0:
+        #     SpgmConfig.debug('static %s %s' % (self.name, l), True)
+        #     return True
+        # return False
+        return len([True for l in self._locations if l.definition_type==DefinitionType.DEFINE])!=0
 
-    # @property
-    # def has_locations(self):
-    #     return len(self._locations)
+    @property
+    def is_from_source(self):
+        counter = self.use_counter
+        if counter==0:
+            return False
+        return not self.static
 
     @property
     def has_locations(self):
         return hasattr(self, 'locations') and len(self.locations)>0
+
+    @property
+    def locations(self):
+        return self._locations
+
+    @locations.setter
+    def locations(self, locations):
+        self._locations = locations
 
     @property
     def locations_str(self):
@@ -528,10 +538,6 @@ class Item(SourceLocation):
         if locations:
             return sep.join([l.format(fmt) for l in locations])
         return ''
-
-    @property
-    def static(self):
-        return self._static
 
     def __str__(self):
         res = 'type=%s name=%s value="%s"' % (self.definition_type.value, self.name, self.value)

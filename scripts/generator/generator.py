@@ -13,12 +13,13 @@ import os
 import json
 import typing
 import re
-from .item import Item, ItemType, DefinitionType, DebugType, i18n
+from .item import Item, ItemType, DebugType
 from .config import SpgmConfig
 import enum
 import generator
-from .item import Item, Location
-from typing import List, Dict, Iterable, Any, Union
+from .item import Item
+from .build_database import BuildDatabase
+from typing import List, Dict, Iterable, Union
 
 # def get_spgm_extra_script():
 #     return generator.spgm_extra_script
@@ -33,57 +34,6 @@ class FilterType(enum.Enum):
     def __str__(self):
         return str(self.value)
 
-class BuildDatabase(object):
-
-    def __init__(self, locations=None):
-        self._items = {} # type: Dict[str, List[Location]]
-        if locations:
-            self._fromjson(locations)
-
-    def set(self, item: Item):
-        self._items[item.name] = item.locations
-
-    def add(self, item: Item):
-        if item.name in self._items:
-            self._items[item.name] = Item._merge_locations(self._items[item.name], item.locations)
-        else:
-            self._items[item.name] = item.locations
-
-    def get(self, name):
-        if name in self._items:
-            return self._items[name]
-        return None
-
-    def clear(self):
-        self._items = {}
-
-    def merge_items(self, items):
-        SpgmConfig.debug('merge_items', True)
-        for name, locations in self._items.items():
-            SpgmConfig.debug('name %s locations %s' % (name, locations))
-            result = [(idx, i) for idx, i in enumerate(items) if i.name==name]
-            if len(result)!=1:
-                raise RuntimeError('item does not exist: name=%s items=%s result=%s' % (name, [str(i) for i in items], result))
-            self._items[name] = Item._merge_locations(items[result[0][0]].locations, locations)
-            # for location in locations.values():
-            #     if not item._locations.find(Location):
-            #         SpgmConfig.debug('item %s: append location=%s' % (name, location))
-            #         item._locations.append(location)
-
-
-    def _fromjson(self, locations):
-        for name, locations in locations.items():
-            locations = [l for l in [Location(*location) for location in locations] if l.lineno>=0]
-            self._items[name] = Item._merge_locations(name in self._items and self._items[name] or [], locations)
-
-    def _tojson(self, indent=0):
-        indent = ' '*indent
-        keys = [item[0] for item in self._items.items() if item[1]]
-        values = [list(map(lambda location: location._totuple(), locations)) for name, locations in self._items.items() if locations]
-        return json.dumps(dict(zip(keys, values))).replace('{"', '{\n%s"' % indent).replace(']], "', ']],\n%s"' % indent).replace(']}', ']\n}')
-
-    def __str__(self):
-        return re.sub('((\[\[)|(\[)|\]\]|\])', lambda arg: (arg.group(1)=='[[' and '[(' or (arg.group(1)==']]' and ')]' or arg.group(1)=='[' and '(' or ')')), self._tojson().replace(']], "', ']],\n"')[2:-2])
 
 
 class Generator(object):
@@ -159,6 +109,12 @@ class Generator(object):
                                     item.i18n.set(lang, value)
                             if DebugType.DUMP_READ_CONFIG in Item.DEBUG:
                                 print('read_json_database %s' % item)
+                            # remove locations if build database does not contain an entry
+                            locations = self._build.find(item.name)
+                            if locations:
+                                item._locations = locations.copy()
+                            else:
+                                item._locations = []
                             self._items.append(item)
             except RuntimeError as e:
                 raise e
@@ -167,19 +123,7 @@ class Generator(object):
                 time.sleep(5)
                 raise RuntimeError("cannot read %s: %s" % (filename, e))
 
-            self._build.merge_items(self._items)
-
     def write_json_database(self, filename, build_filename):
-
-        # update build database
-        for item in self.merged_items:
-            if item.use_counter:
-                self._build.add(item)
-        SpgmConfig.debug('writing build database', True)
-        SpgmConfig.debug(str(self._build))
-
-        with open(build_filename, 'wt') as file:
-            file.write(self._build._tojson(indent=4))
 
         # create database
         out = {}
@@ -204,7 +148,12 @@ class Generator(object):
                     trans.append(id(data))
                     val['i18n'][';'.join(data.lang)] = data.value
             if item.has_locations:
+                item._merge_build_locations(self._build)
                 val['locations'] = item.get_locations_str(',')
+            if item.static:
+                val['type'] = 'static'
+            elif item.is_from_source:
+                val['type'] = 'source'
             out[item.name] = val
 
         try:
@@ -217,6 +166,17 @@ class Generator(object):
 
         except Exception as e:
             raise RuntimeError("cannot write %s: %s" % (filename, e))
+
+        # update build database
+        for item in self.merged_items:
+            if item.use_counter:
+                self._build.add(item)
+        SpgmConfig.debug('writing build database', True)
+        SpgmConfig.debug(str(self._build))
+
+        with open(build_filename, 'wt') as file:
+            file.write(self._build._tojson(indent=4))
+
 
     def write_header_comment(self, file: TextIOWrapper):
         file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
@@ -237,10 +197,7 @@ class Generator(object):
     def write_locations(self, file: TextIOWrapper, item: Item):
         if item.has_locations:
             if self.config.locations_one_per_line:
-                locations = item.locations
-                build_locations = self._build.get(item.name)
-                if build_locations:
-                    locations = Item._merge_locations(build_locations.copy(), locations)
+                locations = self._build.merge_locations(item)
                 file.write(item.get_locations_str(sep='', fmt='// %s\n', locations=locations))
             else:
                 file.write('// %s\n' % item.locations_str)
@@ -258,7 +215,8 @@ class Generator(object):
                 self.write_header_comment(file)
                 self.write_header_start(file, extra_includes)
                 for item in self._merged.values():
-                    if self._build.get(item.name) or (item.use_counter and item.type==ItemType.FROM_SOURCE):
+                    if item.is_from_source:
+                    # if not item.static and (self._build.get(item.name) or (item.use_counter and item.type==ItemType.FROM_SOURCE)):
                         self.write_locations(file, item)
                         file.write('PROGMEM_STRING_DECL(%s);\n' % (item.name))
                 file.writelines([
@@ -276,7 +234,8 @@ class Generator(object):
                 self.write_header_comment(file)
                 file.write('#include "spgm_auto_strings.h"\n')
                 for item in self.merged_items:
-                    if self._build.get(item.name) or (item.use_counter and item.type==ItemType.FROM_SOURCE):
+                    if item.is_from_source:
+                    # if not item.static and (self._build.get(item.name) or (item.use_counter and item.type==ItemType.FROM_SOURCE)):
                         self.write_define(file, item)
                         count += 1
         except OSError as e:

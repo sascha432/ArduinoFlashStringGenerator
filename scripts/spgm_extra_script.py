@@ -230,6 +230,7 @@ class SpgmExtraScript(object):
                 SpgmConfig.debug('include_dir %s' % include)
                 fcpp.add_path(include)
 
+
             SpgmConfig.debug('skip_includes', True)
             for skip_include in config.skip_includes:
                 SpgmConfig.debug('skip_include %s' % skip_include)
@@ -280,9 +281,12 @@ class SpgmExtraScript(object):
 
     # register process nodes for all C/C++ source files
     def register_middle_ware(self, env):
+
+        config = SpgmConfig(env)
+
         def process_node(node: FS.File):
             file = node.srcnode().get_abspath()
-            for pattern in SpgmConfig.get_source_excludes(env):
+            for pattern in config.source_excludes:
                 if fnmatch.fnmatch(file, pattern):
                     return node
             self.source_files.append(node)

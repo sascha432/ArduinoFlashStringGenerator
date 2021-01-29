@@ -1,9 +1,16 @@
 # Changelog
 
-## 0.1.0 (work-in-progress)
+## 0.1.1 (work-in-progress)
+
+- Fixed exporting static defintion
+- Copying locations from build database to database
+- Added definition and declaration file to source_excludes/skip_includes
+
+## 0.1.0
 
 - Fully integrated into platformio as middleware
 - Standalone version has been removed
+- Incremental updates during complication
 
 ## 0.0.4
 
