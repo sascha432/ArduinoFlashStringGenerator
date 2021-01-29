@@ -3,7 +3,10 @@
  */
 
 #include <Arduino.h>
-#include <FlashStringGenerator.h>
+#include "spgm_string_generator.h"
+#include "test_lib.h"
+
+TestClass _test_class;
 
 // fixed definitions
 PROGMEM_STRING_DEF(Example1, "Example 1");
@@ -15,6 +18,7 @@ PROGMEM_STRING_DEF(1, "1");
 PROGMEM_STRING_DEF(test_str, TEST_STRING);
 
 #include "example.h"
+#include "example_ignore.h"
 
 // storing strings inside the code
 FLASH_STRING_GENERATOR_AUTO_INIT(
@@ -45,7 +49,9 @@ void loop() {
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
     Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3) ));
+#if 0
     Serial.print(FSPGM(New_string_unused));
+#endif
     Serial.print(FSPGM(New_string_3));
     char buffer[32];
     snprintf_P(buffer, sizeof(buffer), SPGM(CURRENCY, "%.2f", en-US:"$%.2f", en_CA:"CA$%.2f",en_au:"AU$%.2f",de;es;it;fr:"%.2fEUR"), 1.5);

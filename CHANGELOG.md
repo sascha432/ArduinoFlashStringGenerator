@@ -1,12 +1,20 @@
 # Changelog
 
-## 0.0.3 (work-in-progress)
+## 0.1.0 (work-in-progress)
 
+- Fully integrated into platformio as middleware
+- Standalone version has been removed
+
+## 0.0.4
+
+- Incremental updates
 - source_dir changed to glob
-- Improved performance by including files only once
 - Fixed file collector
 - Added rebuild option (--force)
 - Fixed issues with pcpp 1.22
+
+## 0.0.3
+
 - Reorganized file structure and refactored code
 - Added missing include in FlashStringGeneratorAuto.cpp
 - Fixed passing CPPDEFINES in extra_script.py

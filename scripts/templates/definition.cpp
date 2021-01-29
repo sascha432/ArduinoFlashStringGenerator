@@ -1,1 +1,1 @@
-#include "FlashStringGenerator.h"
+#include "spgm_auto_strings.h"

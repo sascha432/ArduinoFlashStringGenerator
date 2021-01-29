@@ -1,4 +1,3 @@
-
 #
 # Author: sascha_lammers@gmx.de
 #
@@ -7,6 +6,8 @@ import os
 import copy
 import enum
 import re
+from typing import List, Tuple, Union
+from .config import SpgmConfig
 
 DEFAULT_LANGUAGE = 'default'
 
@@ -14,8 +15,9 @@ class ItemType(enum.Enum):
     FROM_SOURCE = 0
     FROM_CONFIG = -1
     REMOVED = -2
+    FROM_BUILD_DATABASE = -3
 
-    def __str(self):
+    def __str__(self):
         return str(self).split('.')[-1]
 
 class DefinitionType(enum.Enum):
@@ -49,10 +51,13 @@ class SourceType(enum.Enum):
     FILENAME = 'filename'
 
 class Location(object):
-    def __init__(self, source, lineno, definition_type):
+    def __init__(self, source, lineno, definition_type='REMOVED'):
         self.source = source
         self.lineno = lineno
-        self.definition_type = definition_type
+        self.definition_type = DefinitionType(definition_type)
+
+    def format(self, fmt):
+        return fmt % ('%s:%s (%s)' % (self.source, self.lineno, self.definition_type.value))
 
     def __eq__(self, o: object) -> bool:
         return id(self)==id(o) or (isinstance(self.lineno, int) and isinstance(o.lineno, int) and self.source==o.source and self.lineno==o.lineno)
@@ -61,13 +66,23 @@ class Location(object):
         return not self.__eq__(o)
 
     def __str__(self):
-        return '%s:%u (%s)' % (self.source, self.lineno, self.definition_type.__str__())
+        return self.__repr__()
 
     def __repr__(self):
-        return '<%s %s:%u %s at %X>' % (self.__class__.__qualname__, self.source, self.lineno, str(self.definition_type), int(id(self)))
+        # if isinstance(self.lineno, ItemType):
+        #     if self.lineno==ItemType.FROM_SOURCE:
+        #         return '<source>'
+        #     elif self.lineno==ItemType.FROM_CONFIG:
+        #         return '<config>'
+        #     elif self.lineno==ItemType.REMOVED:
+        #         return '<removed>'
+        return str(tuple([self.source, str(self.lineno), str(self.definition_type.value)]))
 
     def __hash__(self):
-        return hash(self.__str__())
+        return hash('%s;%s;%s;%s' % (id(self), self.source, self.lineno, self.definition_type.value))
+
+    def _totuple(self):
+        return (self.source, int(self.lineno), str(self.definition_type.value))
 
 class SourceLocation(object):
 
@@ -87,6 +102,9 @@ class SourceLocation(object):
             for location in self.locations:
                 if location.source==source and location.lineno==lineno:
                     self.locations.remove(location)
+
+    # def validate(self, source, lineno):
+    #     return isinstance(lineno, int) and source!=None
 
     # returns source:lineno or <config>
     def get_source(self, config_file='<config>'):
@@ -337,6 +355,11 @@ class Item(SourceLocation):
             return
         self._lang = lang.strip()
 
+    @property
+    def i18n_values(self):
+        values = self.i18n.values() # type: List[i18n_lang]
+        return values
+
     # append to text buffer
     def append_value_buffer(self, value):
         if self.has_value_buffer:
@@ -427,9 +450,8 @@ class Item(SourceLocation):
     #   item1 is not item2 and item1.state is in states and item2.state is in types
     def is_type(self, item1, types=(ItemType.FROM_SOURCE, ItemType.FROM_CONFIG), item2=None):
         if item2==None:
-            if id(item1)==id(self):
-                return False
-            return item1.type in types
+            item2 = item1
+            item1 = self
         if id(item1)==id(item2):
             return False
         return item1.type in types and item2.type in types
@@ -439,18 +461,17 @@ class Item(SourceLocation):
         self._merge_auto_value(item)
         self._merge_type(item)
         self._merge_i18n(item)
-        self._merge_locations(item)
+        self._merge_item_locations(item)
 
     def _merge_value(self, item):
         if item._value!=None and self._value==None:
             self._value = item._value
-        pass
 
     def _merge_auto_value(self, item):
         if item._auto!=None and self._value==None and self._auto==None:
             self._auto = item._auto
-        elif self._auto!=None and item._value==None and item._auto==None:
-            item._auto = self._auto
+        # elif self._auto!=None and item._value==None and item._auto==None:
+        #     item._auto = self._auto
 
     def _merge_type(self, item):
         if self._static or item._static:
@@ -461,23 +482,37 @@ class Item(SourceLocation):
         self.i18n.merge(item.i18n)
         item.i18n = self.i18n
 
-    def _merge_locations(self, item):
+    def _merge_locations(locations, merge):
+        if not isinstance(locations, list) or not isinstance(merge, list):
+            raise RuntimeError('invalid type')
+        # merge "merge" into "locations" and store sorted result in original "locations" list
+        tmp = set(merge)|set(locations)
+        locations.clear()
+        locations.extend(sorted(tmp, key=lambda l: (l.source, l.lineno)))
+        return locations
+
+    def _merge_item_locations(self, item):
         if not self.is_type(item, (ItemType.FROM_SOURCE,)) or not item.has_locations:
             return
-        tmp = self.locations.copy()
-        tmp.extend(item.locations)
-        self.locations.clear()
-        self.locations.extend(sorted(set(tmp), key=lambda l: (l.source, l.lineno)))
-        item.locations = self.locations
+        item.locations = Item._merge_locations(self.locations, item.locations)
 
     @property
     def use_counter(self):
-        n = 0
-        if self.locations:
-            for location in self.locations:
-                if location.definition_type==DefinitionType.SPGM:
-                    n += 1
-        return n
+        return len([True for l in self.locations if l.definition_type==DefinitionType.SPGM])
+        # n = 0
+        # if self.locations:
+        #     for location in self.locations:
+        #         if location.definition_type==DefinitionType.SPGM:
+        #             n += 1
+        # return n
+
+    # @property
+    # def use_counter(self):
+    #     return self._locations.use_counter
+
+    # @property
+    # def has_locations(self):
+    #     return len(self._locations)
 
     @property
     def has_locations(self):
@@ -487,9 +522,11 @@ class Item(SourceLocation):
     def locations_str(self):
         return self.get_locations_str()
 
-    def get_locations_str(self, sep=', ', fmt='%s'):
-        if self.locations:
-            return sep.join([(fmt % l) for l in self.locations])
+    def get_locations_str(self, sep=', ', fmt='%s', locations=None):
+        if locations==None:
+            locations=self.locations
+        if locations:
+            return sep.join([l.format(fmt) for l in locations])
         return ''
 
     @property

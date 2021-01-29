@@ -8,18 +8,18 @@ Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM
 
 [Change Log v0.0.4](CHANGELOG.md)
 
+WARNING! file is not up to date and there were major changes. check examples in platform.ini
+
+[Change Log v0.1.0](CHANGELOG.md)
+
 ## Requirements
 
 - pcpp (tested with 1.22)
 
-Install pcpp in a directory that is in the PIO path, for example
+Install pcpp in a directory that is in the platformio path or use PIO to install it
 
 ```bash
-pip install pcpp==1.22 --prefix $HOME\.platformio\penv
-
-or
-
-pip install pcpp==1.22 --prefix ~/.platformio/penv
+pio run -t spgm_generator_install_requirements
 ```
 
 ## Basic usage

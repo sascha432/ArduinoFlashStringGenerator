@@ -7,6 +7,7 @@ import os
 import fnmatch
 from os import path
 from . import Item
+from .config import SpgmConfig
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
 except Exception as e:
@@ -14,42 +15,45 @@ except Exception as e:
     print("Cannot import pcpp")
     print("Exception: %s" % e)
     print("Path: %s" % sys.path)
+    print()
+    print("Run 'pio run -t spgm_generator_install_requirements' to install the requirements")
+    print()
     sys.exit(1)
 
-class FlashStringPreprocessor(Preprocessor):
-    def __init__(self, verbose):
+class SpgmPreprocessor(Preprocessor):
+    def __init__(self):
         Preprocessor.__init__(self)
         self.define("FLASH_STRINGS_AUTO_INIT 1")
         self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)")
         self.define("SPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
         self.define("FSPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
-        self.verbose = verbose
-        self.ignore_includes = []
+        self._skip_includes = []
         self._items = []
         self._include_counter = 0
         self._include_once = []
         # self.debugout = sys.stdout
 
-    def add_ignore_include(self, include):
-        self.ignore_includes.append(include)
+    def add_skip_include(self, include):
+        self._skip_includes.append(include)
 
     # def on_include_not_found(self,is_system_include,curdir,includepath):
     #     print('******** on_include_not_found')
     #     print(is_system_include)
     #     print(curdir)
     #     print(includepath)
-    #     return super(FlashStringPreprocessor, self).on_include_not_found(is_system_include,curdir,includepath)
+    #     sys.exit(1)
+    #     return super(SpgmPreprocessor, self).on_include_not_found(is_system_include,curdir,includepath)
 
     # def on_unknown_macro_in_defined_expr(self,tok):
     #     print('******** on_unknown_macro_in_defined_expr')
     #     print(tok)
-    #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_defined_expr(tok)
+    #     return super(SpgmPreprocessor, self).on_unknown_macro_in_defined_expr(tok)
 
     # def on_unknown_macro_in_expr(self,tok):
     #     print('********** on_unknown_macro_in_expr')
     #     print(tok)
-    #     return super(FlashStringPreprocessor, self).on_unknown_macro_in_expr(tok)
+    #     return super(SpgmPreprocessor, self).on_unknown_macro_in_expr(tok)
 
     def tokens_to_string(self, toks):
         str = ''
@@ -76,7 +80,7 @@ class FlashStringPreprocessor(Preprocessor):
         #             if os.path.isfile(new_path):
         #                 files.append(new_path)
         #     for file in files:
-        #         for ignore in self.ignore_includes:
+        #         for ignore in self._skip_includes:
         #             if fnmatch.fnmatch(file, ignore):
         #                 if self.verbose:
         #                     print('include include %s' % file)
@@ -91,27 +95,15 @@ class FlashStringPreprocessor(Preprocessor):
         return Preprocessor.on_directive_handle(self, directive, toks, ifpassthru, precedingtoks)
 
     def on_file_open(self, is_system_include, includepath):
-        if not os.path.isabs(includepath):
-            includepath = os.path.abspath(includepath)
+        if path.isfile(includepath):
+            if not os.path.isabs(includepath):
+                includepath = os.path.abspath(includepath)
 
-        found = includepath in self.include_once
-        if not found:
-            self.include_once[includepath] = None
+            for skip_include in self._skip_includes:
+                if fnmatch.fnmatch(includepath, skip_include):
+                    SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
+                    raise OutputDirective(Action.IgnoreAndPassThrough)
 
-        for ignore in self.ignore_includes:
-            if fnmatch.fnmatch(includepath, os.path.abspath(ignore)):
-                if self.verbose:
-                    print('ignore include %s' % includepath)
-                raise OutputDirective(Action.IgnoreAndPassThrough)
-
-        # found = includepath in self._include_once
-        if found:
-            if self.verbose:
-                print('skipping multiple include %s' % includepath)
-            raise OutputDirective(Action.IgnoreAndPassThrough)
-        # self._include_once.append(includepath)
-        # if self.verbose:
-        #     print('include %u: once=%s: %s' % (self._include_counter, not found, includepath))
         return Preprocessor.on_file_open(self, is_system_include, includepath)
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
@@ -120,12 +112,12 @@ class FlashStringPreprocessor(Preprocessor):
     #     print(toks)
     #     print(ifpassthru)
     #     print(precedingtoks)
-    #     return super(FlashStringPreprocessor, self).on_directive_unknown(directive,toks,ifpassthru,precedingtoks)
+    #     return super(SpgmPreprocessor, self).on_directive_unknown(directive,toks,ifpassthru,precedingtoks)
 
     # def on_potential_include_guard(self,macro):
     #     print('******** on_potential_include_guard')
     #     print(self.source)
-    #     return super(FlashStringPreprocessor, self).on_potential_include_guard(macro)
+    #     return super(SpgmPreprocessor, self).on_potential_include_guard(macro)
 
     def on_error(self, file, line, msg):
         # print(file + ':' + str(line) + ': ' + msg)
