@@ -84,7 +84,8 @@ class SplitSepType(enum.Enum):
 class SpgmConfig(object):
 
     _verbose = False
-    _debug = True
+    _debug = False
+    _cache = {}
 
     def echo(msg, title=None):
         if title==True:
@@ -101,10 +102,18 @@ class SpgmConfig(object):
         if SpgmConfig._debug:
             SpgmConfig.echo(msg, title)
 
+    def cache(self, name, lazy_load):
+        return SpgmConfig.__cache('env_%s_item_%s' % (id(self._env), name), lazy_load)
+
+    def __cache(name, lazy_load):
+        if not name in SpgmConfig._cache:
+            SpgmConfig._cache[name] = lazy_load()
+        return SpgmConfig._cache[name]
+
 
     def __init__(self, env):
         self._env = env
-        self.project_src_dir = path.abspath(self._env.subst('$PROJECT_SRC_DIR'))
+        self.project_src_dir = self.cache('project_src_dir', lambda: path.abspath(self._env.subst('$PROJECT_SRC_DIR')))
 
     def _get_abspath(self, name):
         if path.isabs(name):
@@ -178,52 +187,59 @@ class SpgmConfig(object):
 
     @property
     def locations_one_per_line(self):
-        return self._get_bool('locations_one_per_line', False)
+        return self.cache('locations_one_per_line', lambda: self._get_bool('locations_one_per_line', False))
+
+    @property
+    def enable_debug(self):
+        return self.cache('enable_debug', lambda: self._get_bool('enable_debug', False))
 
     @property
     def output_language(self):
-        return self._subst_list(self._get_string('output_language', 'default'), SplitSepType.WHITESPACE)
+        return self.cache('output_language', lambda: self._subst_list(self._get_string('output_language', 'default'), SplitSepType.WHITESPACE))
 
     @property
     def definition_file(self):
-        return self._get_path('definition_file', '$PROJECT_SRC_DIR/spgm_auto_strings.cpp')
+        return self.cache('definition_file', lambda: self._get_path('definition_file', '$PROJECT_SRC_DIR/spgm_auto_strings.cpp'))
 
     @property
     def declaration_file(self):
-        return self._get_path('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h')
+        return self.cache('declaration_file', lambda: self._get_path('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
 
     @property
     def json_database(self):
-        return self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json')
+        return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
 
     @property
     def json_build_database(self):
-        return self._get_path('json_build_database', '$BUILD_DIR/spgm_build_database.json')
+        return self.cache('json_build_database', lambda: self._get_path('json_build_database', '$BUILD_DIR/spgm_build_database.json'))
 
     @property
     def skip_includes(self):
-        return self._subst_list('%s\n%s' % (self.declaration_file,  self._get_string('skip_includes')), SubstListType.PATTERN)
+        return self.cache('skip_includes', lambda: self._subst_list('%s\n%s' % (self.declaration_file,  self._get_string('skip_includes')), SubstListType.PATTERN))
 
     @property
     def source_excludes(self):
-        return self._subst_list('%s\n%s\n%s' % (self.definition_file, self.declaration_file, self._get_string('source_excludes')), SubstListType.PATTERN)
+        return self.cache('source_excludes', lambda: self._subst_list(self._get_string('source_excludes'), SubstListType.PATTERN))
+#        return self.cache('source_excludes', lambda: self._subst_list('%s\n%s\n%s' % (self.definition_file, self.declaration_file, self._get_string('source_excludes')), SubstListType.PATTERN))
 
     @property
     def declaration_include_file(self):
-        return self._get_string('declaration_include_file', 'spgm_string_generator.h')
+        return self.cache('declaration_include_file', lambda: self._get_string('declaration_include_file', 'spgm_string_generator.h'))
 
     @property
     def defines(self):
-        parts = self._normalize_defines_list(self._env['CPPDEFINES']) # List[Tuple[str, str]]
-        return parts
+        return self.cache('defines', lambda: self._normalize_defines_list(self._env['CPPDEFINES']))
 
-    @property
-    def include_dirs(self):
+    def get_include_dirs(self):
         parts = [] # type: List[str]
         parts.extend(self._subst_list(self._get_string('include_dirs'), SubstListType.ABSPATH))
         parts.extend(self._subst_list(self._env['CPPPATH'], SubstListType.ABSPATH))
         parts.extend(self._subst_list(self._env['PROJECT_INCLUDE_DIR'], SubstListType.ABSPATH))
         return parts
+
+    @property
+    def include_dirs(self):
+        return self.cache('include_dirs', self.get_include_dirs)
 
 # class SpgmProjectConfig(object):
 #     def __init__(self, env):

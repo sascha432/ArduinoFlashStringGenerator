@@ -2,6 +2,7 @@
 
 ## 0.1.1 (work-in-progress)
 
+- Cache for configuration
 - Fixed exporting static defintion
 - Copying locations from build database to database
 - Added definition and declaration file to source_excludes/skip_includes

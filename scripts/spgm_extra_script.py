@@ -191,21 +191,18 @@ class SpgmExtraScript(object):
 
     def run_spgm_generator(self, target, source, env):
 
-        if SpgmConfig._debug:
-            import time
-            import random
-            time.sleep(1 + random.randint(500, 1000) / 1000)#TODO remove
-
+        config = SpgmConfig(env)
         if not self.lock.acquire(True, 120.0):
             raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
         try:
 
             SpgmConfig.debug('source files', True)
             files = [] # type: List[FS.File]
-            config = SpgmConfig(env)
             for file in source:
                 include = True
                 file = file.get_abspath()
+                if file==config.definition_file:
+                    continue
                 for exclude in config.source_excludes:
                     # SpgmConfig.debug('fnmatch (%s, %s) = %s' % (file, exclude, fnmatch.fnmatch(file, exclude)))
                     if fnmatch.fnmatch(file, exclude):
@@ -214,6 +211,10 @@ class SpgmExtraScript(object):
                 if include:
                     SpgmConfig.debug('source %s' % file)
                     files.append(file)
+
+            if not files:
+                SpgmConfig.debug('no files for %s' % target)
+                return
 
             gen = Generator(config, files)
             gen.language = config.output_language
@@ -306,6 +307,7 @@ if int(ARGUMENTS.get("PIOVERBOSE", 0)):
 SpgmConfig.verbose('SPGM PRESCRIPT', True)
 
 if not hasattr(generator, 'spgm_extra_script'):
+    # SpgmConfig._debug = SpgmConfig(env).enable_debug
     generator.spgm_extra_script = SpgmExtraScript()
     generator.spgm_extra_script.register_middle_ware(env)
     # force recompilation of the auto strings source
