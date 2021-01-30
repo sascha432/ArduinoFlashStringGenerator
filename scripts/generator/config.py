@@ -12,6 +12,7 @@ from typing import List, Tuple
 import enum
 import re
 import click
+from pathlib import Path, PureWindowsPath
 
 # class SpgmBase(object):
 
@@ -115,24 +116,48 @@ class SpgmConfig(object):
         self._env = env
         self.project_src_dir = self.cache('project_src_dir', lambda: path.abspath(self._env.subst('$PROJECT_SRC_DIR')))
 
+    # def _make_relative_to(source_path, target_path):
+    #     source_path = path.abspath(source_path)
+    #     target_path = path.abspath(target_path)
+    #     if PureWindowsPath(source_path).drive!=PureWindowsPath(target_path).drive:
+    #         raise RuntimeError('cannot create relative path of %s to %s' % (source_path, target_path))
+    #     if source_path==target_path:
+    #         return source_path
+    #     source = Path(source_path).parts
+    #     full_source = source
+    #     target = Path(target_path).parts
+    #     full_target = target
+    #     make_relative = []
+
+    #     num = min(len(source), len(target))
+    #     for n in range(1, num + 2):
+    #         if path.join(*source[0:n])!=path.join(*target[0:n]):
+    #             num = n
+    #             make_relative = ['..']*(len(full_source) - n + 2)
+    #             break
+    #     npl = list(full_source) + make_relative + list(full_target[num:])
+    #     # np = path.join(*npl)
+    #     # anp = path.abspath(np)
+    #     diff = len(full_target) - (len(full_source) - len(make_relative) + len(full_target) - num + 1)
+    #     # diff = len(full_target) - len(Path(anp).parts)
+    #     # print(diff)
+    #     if diff>=1:
+    #         diff -= 1
+    #         make_relative = make_relative[0:-1]
+    #         npl = list(full_source) + make_relative + list(full_target[num - diff:])
+
+    #     np = path.join(*npl)
+    #     # anp = path.abspath(np)
+    #     # print(anp)
+
+    #     if path.abspath(np)==target_path:
+    #         return path.normpath(np)
+    #     raise RuntimeError('cannot create relative path of %s to %s' % (source_path, target_path))
+
     def _get_abspath(self, name):
         if path.isabs(name):
             return path.abspath(name) # normalize path
         return path.abspath(path.join(self.project_src_dir, name))
-
-    # def _get_abspath_list(self, list):
-    #     parts = [] # type: List[str]
-    #     for name in list:
-    #         parts.append(self._get_abspath(name))
-    #     return parts
-
-    # def _get_pattern_list(self, list):
-    #     parts = [] # type: List[str]
-    #     for name in list:
-    #         if path.isdir(name) and not name.endswith('*'):
-    #             name = path.join(name, '*')
-    #         parts.append(name)
-    #     return parts
 
     def _get_path(self, name, default=''):
         return self._get_abspath(self._env.subst(self._env.GetProjectOption('custom_spgm_generator.%s' % name, default=default)))
@@ -205,6 +230,10 @@ class SpgmConfig(object):
     def declaration_file(self):
         return self.cache('declaration_file', lambda: self._get_path('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
 
+    # @property
+    # def declaration_file_raw(self):
+    #     return self.cache('declaration_file_raw', lambda: self._get_string('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
+
     @property
     def json_database(self):
         return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
@@ -233,8 +262,29 @@ class SpgmConfig(object):
     def get_include_dirs(self):
         parts = [] # type: List[str]
         parts.extend(self._subst_list(self._get_string('include_dirs'), SubstListType.ABSPATH))
-        parts.extend(self._subst_list(self._env['CPPPATH'], SubstListType.ABSPATH))
-        parts.extend(self._subst_list(self._env['PROJECT_INCLUDE_DIR'], SubstListType.ABSPATH))
+
+        cpp_path = self._subst_list(self._env['CPPPATH'], SubstListType.ABSPATH)
+        project_include_dir = self._get_abspath(self._env['PROJECT_INCLUDE_DIR'])
+
+        # add include_path for declaration_file
+        add_path = []
+        if not path.dirname(self.declaration_file) in cpp_path:
+            add_path.append(path.dirname(self.declaration_file))
+
+        # add include_path for declaration_include_file
+        dir = self.declaration_include_file
+        if not path.isabs(dir):
+            dir = path.dirname(path.join(project_include_dir, dir))
+        dir = path.abspath(dir)
+        if not dir in cpp_path and not dir in add_path:
+            add_path.append(dir)
+        if add_path:
+            self._env.Replace(CPPPATH=self._env['CPPPATH'] + add_path)
+            cpp_path = self._subst_list(self._env['CPPPATH'], SubstListType.ABSPATH)
+            SpgmConfig.debug('added %s to %s' % (add_path, cpp_path))
+
+        parts.extend(cpp_path)
+        parts.append(project_include_dir)
         return parts
 
     @property

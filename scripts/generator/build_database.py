@@ -41,9 +41,9 @@ class BuildDatabase(object):
 
     def _tojson(self, indent=0):
         indent = ' '*indent
-        keys = [item[0] for item in self._items.items() if item[1]]
-        values = [list(map(lambda location: location._totuple(), locations)) for name, locations in self._items.items() if locations]
-        return json.dumps(dict(zip(keys, values))).replace('{"', '{\n%s"' % indent).replace(']], "', ']],\n%s"' % indent).replace(']}', ']\n}')
+        return json.dumps( \
+            { name: list(map(lambda location: location._totuple(), locations)) for name, locations in self._items.items() if locations } \
+        ).replace('{"', '{\n%s"' % indent).replace(']], "', ']],\n%s"' % indent).replace(']}', ']\n}')
 
     def __str__(self):
         return re.sub('((\[\[)|(\[)|\]\]|\])', lambda arg: (arg.group(1)=='[[' and '[(' or (arg.group(1)==']]' and ')]' or arg.group(1)=='[' and '(' or ')')), self._tojson().replace(']], "', ']],\n"')[2:-2])

@@ -39,8 +39,15 @@ class SpgmExtraScript(object):
 
     def _touch_output_files(env):
         config = SpgmConfig(env)
-        Path(config.declaration_file).touch()
-        Path(config.definition_file).touch()
+
+        # append empty line to force recompilation
+        with open(config.declaration_file, 'at') as file:
+            file.write('\n')
+        with open(config.definition_file, 'at') as file:
+            file.write('\n')
+
+        # Path(config.declaration_file).touch()
+        # Path(config.definition_file).touch()
 
     # def _get_lib(self, lib_name):
     #     if lib_name in self.libs:
@@ -307,7 +314,7 @@ if int(ARGUMENTS.get("PIOVERBOSE", 0)):
 SpgmConfig.verbose('SPGM PRESCRIPT', True)
 
 if not hasattr(generator, 'spgm_extra_script'):
-    # SpgmConfig._debug = SpgmConfig(env).enable_debug
+    SpgmConfig._debug = SpgmConfig(env).enable_debug
     generator.spgm_extra_script = SpgmExtraScript()
     generator.spgm_extra_script.register_middle_ware(env)
     # force recompilation of the auto strings source
