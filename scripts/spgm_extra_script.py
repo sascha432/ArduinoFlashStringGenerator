@@ -21,6 +21,7 @@ import threading
 import generator
 from typing import List
 from pathlib import Path
+import time
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
@@ -198,6 +199,8 @@ class SpgmExtraScript(object):
 
     def run_spgm_generator(self, target, source, env):
 
+        start_time = time.monotonic()
+
         config = SpgmConfig(env)
         if not self.lock.acquire(True, 120.0):
             raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
@@ -233,6 +236,10 @@ class SpgmExtraScript(object):
                 SpgmConfig.debug('define %s=%s' % (define, value))
                 fcpp.define('%s %s' % (define, value))
 
+            for define, value in config.pcpp_defines:
+                SpgmConfig.debug('pcpp_defines %s=%s' % (define, value))
+                fcpp.define('%s %s' % (define, value))
+
             SpgmConfig.debug('include_dirs', True)
             for include in config.include_dirs:
                 SpgmConfig.debug('include_dir %s' % include)
@@ -255,6 +262,7 @@ class SpgmExtraScript(object):
                 SpgmConfig.debug('file %s' % file)
                 parts.append('#include "%s"' % file)
 
+            SpgmConfig.debug('preprocessing files', True)
             # parse files
             fcpp.parse('\n'.join(parts))
             fcpp.find_strings()
@@ -278,7 +286,9 @@ class SpgmExtraScript(object):
             # write config file and database
             gen.write_json_database(config.json_database, config.json_build_database)
 
-            SpgmConfig.debug('created %u items' % num, True)
+            SpgmConfig.debug_verbose('', True)
+            SpgmConfig.debug_verbose('created %u items in %.3f seconds' % (num, time.monotonic() - start_time), True)
+            SpgmConfig.debug_verbose('', True)
 
         finally:
             self.lock.release()
@@ -302,6 +312,13 @@ class SpgmExtraScript(object):
 
         for suffix in env['CPPSUFFIXES']:
             env.AddBuildMiddleware(process_node, '*%s' % suffix)
+
+        def process_linker_node(node: FS.File):
+            file = node.get_abspath()
+            print('LINKER %s' % file)
+
+        for suffix in ['*.o', '*.a']:
+            env.AddBuildMiddleware(process_linker_node, suffix)
 
     def add_pre_actions(self, env):
         for source in self.source_files:

@@ -39,6 +39,8 @@ void loop() {
     Serial.print(FSPGM(Example2));
     Serial.print(FSPGM(Example3, "Inline Example 3"));
     Serial.print(FSPGM(Example3, "Inline Example 3")); // redefintion requires same value
+    Serial.print(FSPGM(build_flags, BUILD_FLAGS));
+    Serial.print(FSPGM(example_const_no_1, EXAMPLE_CONST_NO_1));
     Serial.print(FSPGM(mime_type_text_html));
     Serial.print(FSPGM(index_html, "index.html"));
     Serial.print(FSPGM(New_string));

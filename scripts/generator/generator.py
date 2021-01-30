@@ -171,8 +171,8 @@ class Generator(object):
         for item in self.merged_items:
             if item.use_counter:
                 self._build.add(item)
-        SpgmConfig.debug('writing build database', True)
-        SpgmConfig.debug(str(self._build))
+        # SpgmConfig.debug('writing build database', True)
+        # SpgmConfig.debug(str(self._build))
 
         with open(build_filename, 'wt') as file:
             file.write(self._build._tojson(indent=4))

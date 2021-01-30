@@ -90,8 +90,15 @@ class SpgmConfig(object):
 
     def echo(msg, title=None):
         if title==True:
-            n = max(10, (click.get_terminal_size()[0] - len(msg)) // 2)
-            click.echo("%s %s %s" % ('-'*n, msg, '-'*n))
+            if msg!='':
+                msg = ' %s ' % msg
+            cols = click.get_terminal_size()[0]
+            n = max(10, (cols - len(msg) - 1) // 2)
+            m = (cols - n - len(msg) - 1)
+            if m<=5:
+                n -= 5
+                m = 5
+            click.echo(('-' * n) + msg + ('-' * m))
         else:
             click.echo(msg)
 
@@ -102,6 +109,12 @@ class SpgmConfig(object):
     def debug(msg, title=None):
         if SpgmConfig._debug:
             SpgmConfig.echo(msg, title)
+
+    def debug_verbose(msg, title=None):
+        if SpgmConfig._debug:
+            SpgmConfig.debug(msg, title)
+        elif SpgmConfig._verbose:
+            SpgmConfig.verbose(msg, title)
 
     def cache(self, name, lazy_load):
         return SpgmConfig.__cache('env_%s_item_%s' % (id(self._env), name), lazy_load)
@@ -195,15 +208,32 @@ class SpgmConfig(object):
         if not defines:
             return parts
         for item in defines:
+            value = None
             if isinstance(item, str):
                 item = self._env.subst(item.strip())
                 if item:
-                    parts.append((item, '1'))
+                    value = '1'
+                    if '=' in item:
+                        item2, value = item.split('=', 3)
+                        if '"' in item2 or "'" in  item2:
+                            raise RuntimeError('constant name contains quotes: %s' % (item))
+                        item = item2.strip()
+                        if item:
+                            value = value.strip() # type: str
+                            if not value:
+                                value = '1'
             elif isinstance(item, (tuple, list)):
                 value = self._env.subst(str(item[1]))
                 if not value:
                     value = '1'
-                parts.append((str(item[0]), value))
+                item = str(item[0])
+            if value!=None:
+                if value.startswith('\\"') and value.endswith('\\"'):
+                    value = '"' + value[2:-2] + '"'
+                if value.startswith('"') and value.endswith('"'):
+                    value = value.replace('\\ ', ' ')
+
+                parts.append((item, value))
         return parts
 
     @property
@@ -230,10 +260,6 @@ class SpgmConfig(object):
     def declaration_file(self):
         return self.cache('declaration_file', lambda: self._get_path('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
 
-    # @property
-    # def declaration_file_raw(self):
-    #     return self.cache('declaration_file_raw', lambda: self._get_string('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
-
     @property
     def json_database(self):
         return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
@@ -258,6 +284,10 @@ class SpgmConfig(object):
     @property
     def defines(self):
         return self.cache('defines', lambda: self._normalize_defines_list(self._env['CPPDEFINES']))
+
+    @property
+    def pcpp_defines(self):
+        return self.cache('pcpp_defines', lambda: self._normalize_defines_list(self._get_string('pcpp_defines')))
 
     def get_include_dirs(self):
         parts = [] # type: List[str]

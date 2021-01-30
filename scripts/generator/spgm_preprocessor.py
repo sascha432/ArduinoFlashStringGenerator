@@ -16,7 +16,7 @@ except Exception as e:
     print("Exception: %s" % e)
     print("Path: %s" % sys.path)
     print()
-    print("Run 'pio run -t spgm_generator_install_requirements' to install the requirements")
+    print("Run 'pio run -t spgm_install_requirements' to install the requirements")
     print()
     sys.exit(1)
 
@@ -96,13 +96,14 @@ class SpgmPreprocessor(Preprocessor):
 
     def on_file_open(self, is_system_include, includepath):
         if path.isfile(includepath):
-            if not os.path.isabs(includepath):
-                includepath = os.path.abspath(includepath)
+            includepath = os.path.abspath(includepath)
 
             for skip_include in self._skip_includes:
                 if fnmatch.fnmatch(includepath, skip_include):
                     SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
                     raise OutputDirective(Action.IgnoreAndPassThrough)
+
+        SpgmConfig.debug('pcpp %s' % includepath)
 
         return Preprocessor.on_file_open(self, is_system_include, includepath)
 
