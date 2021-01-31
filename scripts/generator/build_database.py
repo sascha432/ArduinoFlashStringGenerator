@@ -39,11 +39,12 @@ class BuildDatabase(object):
             locations = [l for l in [self.Location(*location) for location in locations] if l.lineno>=0]
             self._items[name] = self.Item._merge_locations(name in self._items and self._items[name] or [], locations)
 
-    def _tojson(self, indent=0):
-        indent = ' '*indent
+    def _tojson(self, indent=None):
         return json.dumps( \
-            { name: list(map(lambda location: location._totuple(), locations)) for name, locations in self._items.items() if locations } \
-        ).replace('{"', '{\n%s"' % indent).replace(']], "', ']],\n%s"' % indent).replace(']}', ']\n}')
+            { name: list(map(lambda location: location._tolist(), locations)) for name, locations in self._items.items() if locations }, \
+            indent=indent, sort_keys=True \
+        )
 
     def __str__(self):
-        return re.sub('((\[\[)|(\[)|\]\]|\])', lambda arg: (arg.group(1)=='[[' and '[(' or (arg.group(1)==']]' and ')]' or arg.group(1)=='[' and '(' or ')')), self._tojson().replace(']], "', ']],\n"')[2:-2])
+        return self._tojson(indent=4)
+        # return re.sub('((\[\[)|(\[)|\]\]|\])', lambda arg: (arg.group(1)=='[[' and '[(' or (arg.group(1)==']]' and ')]' or arg.group(1)=='[' and '(' or ')')), self._tojson().replace(']], "', ']],\n"')[2:-2])

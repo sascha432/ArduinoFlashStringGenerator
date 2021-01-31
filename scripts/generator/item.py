@@ -17,8 +17,8 @@ class ItemType(enum.Enum):
     REMOVED = -2
     FROM_BUILD_DATABASE = -3
 
-    def __str__(self):
-        return str(self).split('.')[-1]
+    # def __str__(self):
+    #     return str(self.value)
 
 class DefinitionType(enum.Enum):
     DEFINE = 'DEFINE'
@@ -81,8 +81,8 @@ class Location(object):
     def __hash__(self):
         return hash('%s;%s;%s' % (self.source, self.lineno, self.definition_type.value))
 
-    def _totuple(self):
-        return (self.source, int(self.lineno), str(self.definition_type.value))
+    def _tolist(self):
+        return [self.source, int(self.lineno), str(self.definition_type.value)]
 
 class SourceLocation(object):
 
@@ -456,20 +456,30 @@ class Item(SourceLocation):
         return item1.type in types and item2.type in types
 
     def merge(self, item):
+        # print('merge %s, %s' % (self, item))
         self._merge_value(item)
         self._merge_auto_value(item)
         self._merge_i18n(item)
         self._merge_item_locations(item)
 
+        if self._value!=None and self._auto!=None:
+            raise RuntimeError('auto and value set: %s' % self)
+
+        # print("result %s" % self)
+
+
     def _merge_value(self, item):
+        if item._value!=None and item._auto!=None:
+            raise RuntimeError('auto and value set: %s' % item)
         if item._value!=None and self._value==None:
             self._value = item._value
+            self._auto = None
 
     def _merge_auto_value(self, item):
+        if item._value!=None and item._auto!=None:
+            raise RuntimeError('auto and value set: %s' % item)
         if item._auto!=None and self._value==None and self._auto==None:
             self._auto = item._auto
-        # elif self._auto!=None and item._value==None and item._auto==None:
-        #     item._auto = self._auto
 
     def _merge_i18n(self, item):
         self.i18n.merge(item.i18n)
@@ -551,5 +561,5 @@ class Item(SourceLocation):
         res += ' static=%s' % self.static
 
         if DebugType.ITEM_DEBUG_ATTR in (self.DEBUG) and hasattr(self, '_lang'):
-            res +=  ' debug=%s' % {'lang': self.lang, 'args': self.arg_num, 'buffer': self._value_buffer, 'item_type': str(self.type)}
+            res +=  ' debug=%s' % {'lang': self.lang, 'args': self.arg_num, 'buffer': self._value_buffer, 'item_type': str(self.type).split('.')[-1], '_auto': self._auto, '_value': self._value}
         return res

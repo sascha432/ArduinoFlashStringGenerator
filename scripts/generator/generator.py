@@ -42,7 +42,7 @@ class Generator(object):
         self._config = config
         self._files = files
         self._items = [] # type: List[Item]
-        self._merged = {} # type: Dict[str, Item]
+        self._merged = None
         self._language = {'default': 'default'} # type: Dict[str, List[str]]
         self._build = BuildDatabase()
 
@@ -74,19 +74,19 @@ class Generator(object):
                 lre = re.sub('[_-]', '[_-]', lang.replace('*', '.*')) + r'\Z'
             self._language[lang] = lre
 
-    @property
-    def merged_items(self):
-        values = self._merged.values() # type: List[Union[Item, List[Item]]]
-        return values
-
     def read_json_database(self, filename, build_filename):
+
+        self._merged = None
 
         self._build.clear()
         if os.path.exists(build_filename):
             SpgmConfig.debug('reading build database', True)
-            with open(build_filename, 'rt') as file:
-                self._build._fromjson(json.loads(file.read()))
-            SpgmConfig.debug(self._build.__str__())
+            try:
+                with open(build_filename, 'rt') as file:
+                    self._build._fromjson(json.loads(file.read()))
+                SpgmConfig.debug(self._build.__str__())
+            except Exception as e:
+                SpgmConfig.verbose('cannot read build database: %s' % e);
 
         if os.path.exists(filename):
             try:
@@ -119,16 +119,18 @@ class Generator(object):
             except RuntimeError as e:
                 raise e
             except Exception as e:
-                import time#TODO remove
-                time.sleep(5)
                 raise RuntimeError("cannot read %s: %s" % (filename, e))
 
     def write_json_database(self, filename, build_filename):
 
+        if self._merged==None:
+            self.merge_items(None)
+
         # create database
         out = {}
         trans = []
-        for item in self.merged_items:
+        for item in self._merged.values():
+            item = item # type: Item
             val = {
                 'use_counter': item.use_counter,
             }
@@ -155,10 +157,9 @@ class Generator(object):
             elif item.is_from_source:
                 val['type'] = 'source'
             out[item.name] = val
-
         try:
             with open(filename, 'wt') as file:
-                contents = json.dumps(out, indent=4)
+                contents = json.dumps(out, indent=4, sort_keys=True)
                 file.write('// It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file\n')
                 file.write(contents)
                 if DebugType.DUMP_WRITE_CONFIG in Item.DEBUG:
@@ -168,14 +169,14 @@ class Generator(object):
             raise RuntimeError("cannot write %s: %s" % (filename, e))
 
         # update build database
-        for item in self.merged_items:
+        for item in self._merged.values():
             if item.use_counter:
                 self._build.add(item)
         # SpgmConfig.debug('writing build database', True)
         # SpgmConfig.debug(str(self._build))
 
         with open(build_filename, 'wt') as file:
-            file.write(self._build._tojson(indent=4))
+            file.write(self._build._tojson())
 
 
     def write_header_comment(self, file: TextIOWrapper):
@@ -210,6 +211,7 @@ class Generator(object):
     def create_output_header(self, filename, extra_includes=None):
         if extra_includes and isinstance(extra_includes, str):
             extra_includes = [extra_includes]
+
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
@@ -233,7 +235,7 @@ class Generator(object):
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
                 file.write('#include "spgm_auto_strings.h"\n')
-                for item in self.merged_items:
+                for item in self._merged.values():
                     if item.is_from_source:
                     # if not item.static and (self._build.get(item.name) or (item.use_counter and item.type==ItemType.FROM_SOURCE)):
                         self.write_define(file, item)
@@ -246,7 +248,7 @@ class Generator(object):
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
-                for item in self.merged_items:
+                for item in self._merged.values():
                     if item.static and item.type==ItemType.FROM_SOURCE:
                         self.write_define(file, item)
         except OSError as e:
@@ -256,7 +258,7 @@ class Generator(object):
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
-                for item in self.merged_items:
+                for item in self._merged.values():
                     if item.has_auto_value:
                         pass
         except OSError as e:
@@ -343,7 +345,9 @@ class Generator(object):
                 self._items.remove(item2)
 
     def merge_items(self, items):
-        self._items.extend(items)
+        if items:
+            self._items.extend(items)
+
         self._merged = {}
         self._dump_grouped('start') # debug
 
@@ -398,7 +402,7 @@ class Generator(object):
             print(str(item))
 
     def dump_merged(self):
-        for item in self.merged_items:
+        for item in self._merged.values():
             if isinstance(item, list):
                 if item:
                     print(item[0].name)

@@ -32,6 +32,7 @@ class SpgmPreprocessor(Preprocessor):
         self._items = []
         self._include_counter = 0
         self._include_once = []
+        self._counter = 0
         # self.debugout = sys.stdout
 
     def add_skip_include(self, include):
@@ -100,11 +101,12 @@ class SpgmPreprocessor(Preprocessor):
 
             for skip_include in self._skip_includes:
                 if fnmatch.fnmatch(includepath, skip_include):
-                    SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
+                    # SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
                     raise OutputDirective(Action.IgnoreAndPassThrough)
 
-        SpgmConfig.debug('pcpp %s' % includepath)
+        # SpgmConfig.debug('pcpp %s' % includepath)
 
+        self._counter += 1
         return Preprocessor.on_file_open(self, is_system_include, includepath)
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
@@ -239,3 +241,11 @@ class SpgmPreprocessor(Preprocessor):
     @property
     def items(self):
         return self._items
+
+    @property
+    def include_counter(self):
+        return self._counter
+
+    def cleanup(self):
+        self._items = []
+        self._counter = 0

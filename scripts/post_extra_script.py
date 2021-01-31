@@ -26,6 +26,9 @@ spgm_extra_script.add_pre_actions(env)
 
 env.AlwaysBuild(env.Alias("spgm_install_requirements", None, spgm_extra_script.run_install_requirements))
 env.AlwaysBuild(env.Alias("spgm_build", None, spgm_extra_script.run_build_spgm))
+env.AlwaysBuild(env.Alias("spgm_export_auto", None, spgm_extra_script.run_export_auto))
+env.AlwaysBuild(env.Alias("spgm_export_config", None, spgm_extra_script.run_export_config))
+env.AlwaysBuild(env.Alias("spgm_export_all", None, spgm_extra_script.run_export_all))
 
 env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", spgm_extra_script.run_recompile_auto_strings)
 

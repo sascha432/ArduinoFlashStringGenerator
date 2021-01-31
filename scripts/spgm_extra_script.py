@@ -1,3 +1,4 @@
+
 #
 # Author: sascha_lammers@gmx.de
 #
@@ -15,16 +16,23 @@ import tempfile
 import shlex
 import subprocess
 import fnmatch
-from generator import FilterType, Generator, SpgmConfig
+from generator import FilterType, Generator, SpgmConfig, Item, ItemType
 from generator import SpgmPreprocessor
 import threading
 import generator
 from typing import List
 from pathlib import Path
+import enum
 import time
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
+
+class ExportType(enum.Enum):
+    AUTO = 1,
+    SOURCE = 2,
+    CONFIG = 3,
+    ALL = 4
 
 class SpgmExtraScript(object):
 
@@ -36,14 +44,15 @@ class SpgmExtraScript(object):
         self.source_files = []
         # self.project_src_dir = path.abspath(env.subst('$PROJECT_SRC_DIR'))
         # self.project_dir = path.abspath(env.subst('$PROJECT_DIR'))
-        self.lock = threading.RLock()
+        self.lock = threading.Lock()
+        self.log_file = None
 
     def _touch_output_files(env):
         config = SpgmConfig(env)
 
         # append empty line to force recompilation
-        with open(config.declaration_file, 'at') as file:
-            file.write('\n')
+        # with open(config.declaration_file, 'at') as file:
+        #     file.write('\n')
         with open(config.definition_file, 'at') as file:
             file.write('\n')
 
@@ -192,6 +201,50 @@ class SpgmExtraScript(object):
             self.build_spgm_lib(lib.name, lib.env, lib)
         self.build_spgm_lib(None, env)
 
+    def export_database(self, config, type):
+        gen = Generator(config, [])
+        gen.language = config.output_language
+        gen.read_json_database(config.json_database, config.json_build_database)
+
+        gen.merge_items(None)
+
+        print('FLASH_STRING_GENERATOR_AUTO_INIT(')
+
+        def escape(s):
+            return '"%s"' % s.replace('\\', '\\\\').replace('"', '\\"')
+
+        for item in sorted(gen._merged.values(), key=lambda item: item.name):
+            if (\
+                    type==ExportType.AUTO and item.has_auto_value \
+                ) or ( \
+                    type==ExportType.SOURCE and item.type==ItemType.FROM_SOURCE \
+                ) or ( \
+                    type==ExportType.CONFIG and item.type==ItemType.FROM_CONFIG \
+                ) or ( \
+                    type==ExportType.ALL \
+                ):
+                parts = [item.name, escape(item.value)]
+
+                item = item # type: Item
+                trans = item.i18n.values()
+                if trans:
+                    for lang in trans:
+                        parts.append('%s: %s' % (','.join(lang.lang), escape(lang.value)))
+
+                print('    // %s' % item.get_locations_str())
+                print('    AUTO_STRING_DEF(%s)' % ', '.join(parts))
+
+        print(');')
+
+    def run_export_config(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.CONFIG)
+
+    def run_export_all(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.ALL)
+
+    def run_export_auto(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.AUTO)
+
 
     def run_install_requirements(self, source, target, env):
         env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
@@ -199,62 +252,87 @@ class SpgmExtraScript(object):
 
     def run_spgm_generator(self, target, source, env):
 
+
         start_time = time.monotonic()
 
         config = SpgmConfig(env)
-        if not self.lock.acquire(True, 120.0):
+
+        if self.log_file==None:
+            SpgmConfig.debug('creating log file %s' %config.log_file, True)
+            self.log_file = open(config.log_file, 'at')
+
+            self.log_file.write('--- source files:\n')
+            for node in self.source_files:
+                self.log_file.write('%s -> %s\n' % (node.get_abspath(), node.srcnode().get_abspath()))
+
+
+        SpgmConfig.debug('source files', True)
+        files = [] # type: List[FS.File]
+        for file in source:
+            include = True
+            file = file.get_abspath()
+            if file==config.definition_file:
+                continue
+            for exclude in config.source_excludes:
+                # SpgmConfig.debug('fnmatch (%s, %s) = %s' % (file, exclude, fnmatch.fnmatch(file, exclude)))
+                if fnmatch.fnmatch(file, exclude):
+                    include = False
+                    break
+            if include:
+                SpgmConfig.debug('source %s' % file)
+                files.append(file)
+
+        if not files:
+            SpgmConfig.debug('no files for %s' % target)
+            return
+
+        SpgmConfig.verbose('waiting for lock...')
+        if not self.lock.acquire(True, 900.0):
             raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
         try:
+            SpgmConfig.verbose('lock acquired...')
+            # if config.is_cached('generator') and False:
+                # SpgmConfig.debug('loading generator from cache', True)
+                # gen = config.get_cache('generator')
+            # else:
+            if True:
+                SpgmConfig.debug('creating generator object', True)
+                gen = Generator(config, files)
+                gen.language = config.output_language
+                gen.read_json_database(config.json_database, config.json_build_database)
+                # config.set_cache('generator', gen)
 
-            SpgmConfig.debug('source files', True)
-            files = [] # type: List[FS.File]
-            for file in source:
-                include = True
-                file = file.get_abspath()
-                if file==config.definition_file:
-                    continue
-                for exclude in config.source_excludes:
-                    # SpgmConfig.debug('fnmatch (%s, %s) = %s' % (file, exclude, fnmatch.fnmatch(file, exclude)))
-                    if fnmatch.fnmatch(file, exclude):
-                        include = False
-                        break
-                if include:
-                    SpgmConfig.debug('source %s' % file)
-                    files.append(file)
+            if config.is_cached('fcpp'):
+                SpgmConfig.debug('loading preprocessor from cache', True)
+                fcpp = config.get_cache('fcpp')
+            else:
+                SpgmConfig.debug('creating preprocessor object', True)
+                SpgmConfig.debug('defines', True)
+                fcpp = SpgmPreprocessor()
+                for define, value in config.defines:
+                    SpgmConfig.debug('define %s=%s' % (define, value))
+                    fcpp.define('%s %s' % (define, value))
 
-            if not files:
-                SpgmConfig.debug('no files for %s' % target)
-                return
+                for define, value in config.pcpp_defines:
+                    SpgmConfig.debug('pcpp_defines %s=%s' % (define, value))
+                    fcpp.define('%s %s' % (define, value))
 
-            gen = Generator(config, files)
-            gen.language = config.output_language
-            gen.read_json_database(config.json_database, config.json_build_database)
+                SpgmConfig.debug('include_dirs', True)
+                for include in config.include_dirs:
+                    SpgmConfig.debug('include_dir %s' % include)
+                    fcpp.add_path(include)
 
-            SpgmConfig.debug('defines', True)
-            fcpp = SpgmPreprocessor()
-            for define, value in config.defines:
-                SpgmConfig.debug('define %s=%s' % (define, value))
-                fcpp.define('%s %s' % (define, value))
+                SpgmConfig.debug('skip_includes', True)
+                for skip_include in config.skip_includes:
+                    SpgmConfig.debug('skip_include %s' % skip_include)
+                    fcpp.add_skip_include(skip_include)
 
-            for define, value in config.pcpp_defines:
-                SpgmConfig.debug('pcpp_defines %s=%s' % (define, value))
-                fcpp.define('%s %s' % (define, value))
+                # SpgmConfig.debug('source_excludes', True)
+                # for exclude_pattern in config.source_excludes:
+                #     SpgmConfig.debug('exclude_pattern %s' % exclude_pattern)
+                #     fcpp.add_skip_include(exclude_pattern)
 
-            SpgmConfig.debug('include_dirs', True)
-            for include in config.include_dirs:
-                SpgmConfig.debug('include_dir %s' % include)
-                fcpp.add_path(include)
-
-
-            SpgmConfig.debug('skip_includes', True)
-            for skip_include in config.skip_includes:
-                SpgmConfig.debug('skip_include %s' % skip_include)
-                fcpp.add_skip_include(skip_include)
-
-            # SpgmConfig.debug('source_excludes', True)
-            # for exclude_pattern in config.source_excludes:
-            #     SpgmConfig.debug('exclude_pattern %s' % exclude_pattern)
-            #     fcpp.add_skip_include(exclude_pattern)
+                config.set_cache('fcpp', fcpp)
 
             SpgmConfig.debug('files', True)
             parts = []
@@ -262,14 +340,27 @@ class SpgmExtraScript(object):
                 SpgmConfig.debug('file %s' % file)
                 parts.append('#include "%s"' % file)
 
+            self.log_file.write('--- preprocessing files:\n')
+            for file in gen.files:
+                self.log_file.write('%s\n' % file)
+
             SpgmConfig.debug('preprocessing files', True)
             # parse files
             fcpp.parse('\n'.join(parts))
             fcpp.find_strings()
 
+            SpgmConfig.debug('creating output files', True)
             gen.merge_items(fcpp.items)
 
-            SpgmConfig.debug('creating output files', True)
+            num = len(fcpp.items)
+            include_counter = fcpp.include_counter
+
+            self.log_file.write('--- result: %u items, %u include files, time %.3f seconds\n' % (num, include_counter, time.monotonic() - start_time))
+            for item in fcpp.items:
+                self.log_file.write('%s\n' % item)
+
+            fcpp.cleanup()
+
             SpgmConfig.debug('output_language %s' % gen.language)
             SpgmConfig.debug('declaration_file %s' % config.declaration_file)
             SpgmConfig.debug('definition_file %s' % config.definition_file)
@@ -279,18 +370,17 @@ class SpgmExtraScript(object):
 
             # create output files
             gen.create_output_header(config.declaration_file, config.declaration_include_file)
-            num = gen.create_output_define(config.definition_file)
+            gen.create_output_define(config.definition_file)
             # generator.create_output_static(args.output_static)
             # generator.create_output_auto(args.output_auto)
 
             # write config file and database
             gen.write_json_database(config.json_database, config.json_build_database)
 
-            SpgmConfig.debug_verbose('', True)
-            SpgmConfig.debug_verbose('created %u items in %.3f seconds' % (num, time.monotonic() - start_time), True)
-            SpgmConfig.debug_verbose('', True)
+            SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
 
         finally:
+            SpgmConfig.verbose('Releasing lock...')
             self.lock.release()
 
     def run_recompile_auto_strings(self, target, source, env):
@@ -303,22 +393,28 @@ class SpgmExtraScript(object):
         config = SpgmConfig(env)
 
         def process_node(node: FS.File):
-            file = node.srcnode().get_abspath()
-            for pattern in config.source_excludes:
-                if fnmatch.fnmatch(file, pattern):
-                    return node
-            self.source_files.append(node)
-            return node
+            if node:
+                file = node.srcnode().get_abspath()
+
+                if file==config.declaration_file:
+                    return None
+
+                for pattern in config.source_excludes:
+                    if fnmatch.fnmatch(file, pattern):
+                        return node
+                self.source_files.append(node)
+                return node
+            return None
 
         for suffix in env['CPPSUFFIXES']:
             env.AddBuildMiddleware(process_node, '*%s' % suffix)
 
-        def process_linker_node(node: FS.File):
-            file = node.get_abspath()
-            print('LINKER %s' % file)
+        # def process_linker_node(node: FS.File):
+        #     file = node.get_abspath()
+        #     print('LINKER %s' % file)
 
-        for suffix in ['*.o', '*.a']:
-            env.AddBuildMiddleware(process_linker_node, suffix)
+        # for suffix in ['*.o', '*.a']:
+        #     env.AddBuildMiddleware(process_linker_node, suffix)
 
     def add_pre_actions(self, env):
         for source in self.source_files:

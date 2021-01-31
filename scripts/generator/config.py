@@ -116,13 +116,29 @@ class SpgmConfig(object):
         elif SpgmConfig._verbose:
             SpgmConfig.verbose(msg, title)
 
-    def cache(self, name, lazy_load):
-        return SpgmConfig.__cache('env_%s_item_%s' % (id(self._env), name), lazy_load)
-
     def __cache(name, lazy_load):
         if not name in SpgmConfig._cache:
             SpgmConfig._cache[name] = lazy_load()
         return SpgmConfig._cache[name]
+
+    def _cache_item_name(self, name):
+        return 'env_%s_item_%s' % (id(self._env), name)
+
+    def cache(self, name, lazy_load):
+        return SpgmConfig.__cache(self._cache_item_name(name), lazy_load)
+
+    def is_cached(self, name):
+        return self._cache_item_name(name) in SpgmConfig._cache
+
+    def get_cache(self, name):
+        name = self._cache_item_name(name)
+        if not name in SpgmConfig._cache:
+            return None
+        return SpgmConfig._cache[name]
+
+    def set_cache(self, name, value):
+        name = self._cache_item_name(name)
+        SpgmConfig._cache[name] = value
 
 
     def __init__(self, env):
@@ -180,8 +196,16 @@ class SpgmConfig(object):
 
     def _get_bool(self, name, default=None):
         value = self._env.subst(self._env.GetProjectOption('custom_spgm_generator.%s' % name, default=default))
-        if isinstance(value, bool) or (isinstance(value, str) and value.lower() in ('true', 'false')):
-            return bool(value)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value!=0
+        if isinstance(value, str):
+            lvalue = value.lower()
+            if lvalue in('true', '1'):
+                return True
+            if lvalue in('false', '0'):
+                return False
         raise RuntimeError('custom_spgm_generator.%s: expected true or false, got %s' % (name, value))
 
     def _subst_list(self, list, type=SubstListType.STR, sep=SplitSepType.NEWLINE) -> List[str]:
@@ -267,6 +291,10 @@ class SpgmConfig(object):
     @property
     def json_build_database(self):
         return self.cache('json_build_database', lambda: self._get_path('json_build_database', '$BUILD_DIR/spgm_build_database.json'))
+
+    @property
+    def log_file(self):
+        return self.cache('log_file', lambda: self._get_path('log_file', '$BUILD_DIR/spgm_string_generator.log'))
 
     @property
     def skip_includes(self):
