@@ -5,9 +5,9 @@
 
 from SCons.Script import ARGUMENTS
 from SCons.Node import FS
-from SCons.Script.SConscript import SConsEnvironment
-from SCons.Script.SConscript import DefaultEnvironmentCall
-from SCons.Node import FS
+from SCons.Script.SConscript import SConsEnvironment, DefaultEnvironmentCall
+from SCons.Script import COMMAND_LINE_TARGETS
+# from SCons.Script.SConscript import DefaultEnvironmentCall
 import os
 from os import path
 import sys
@@ -24,6 +24,7 @@ from typing import List
 from pathlib import Path
 import enum
 import time
+import click
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
@@ -47,214 +48,68 @@ class SpgmExtraScript(object):
         self.lock = threading.Lock()
         self.log_file = None
 
-    def _touch_output_files(env):
-        config = SpgmConfig(env)
-
-        # append empty line to force recompilation
-        # with open(config.declaration_file, 'at') as file:
-        #     file.write('\n')
-        with open(config.definition_file, 'at') as file:
-            file.write('\n')
-
-        # Path(config.declaration_file).touch()
-        # Path(config.definition_file).touch()
-
-    # def _get_lib(self, lib_name):
-    #     if lib_name in self.libs:
-    #         return self.libs[lib_name]
-    #     return None
-
-    # def create_libs(self, env, projenv):
-    #     self.libs = {
-    #         None: self._create_lib(None, env, projenv)
-    #     }
-    #     for lib in self.projenv.GetLibBuilders():
-    #         lib = self._create_lib(lib.name, env, projenv, lib)
-    #         if lib:
-    #             self.libs[lib._name] = lib
-
-    # def _create_lib(self, lib_name, env, projenv, lib=None):
-    #     return LibContainer(lib_name, env, projenv, lib)
-
-    # def _get_script_location(self):
-    #     return path.abspath(path.join(path.dirname((inspect.getfile(inspect.currentframe()))), 'spgm_generator.py'))
-
-    def build_spgm_lib(self, lib_name, env, lib_org=None):
-
-        # print(env.get("PIOBUILDFILES"))
-        # print(dir(env))
-        print(env.Dump())
-        sys.exit(0)
-
-        if not self.libs:
-            if self.verbose:
-                print("Creating libraries...")
-            self.create_libs(self.env, self.projenv)
-
-        if self.verbose:
-            print('-'*76)
-            if lib_name:
-                print('Library: %s' % lib_name)
+    def box(self, msgs, fg=None):
+        if isinstance(msgs, str):
+            msgs = (msgs,)
+        click.secho('-'*76)
+        for msg in msgs:
+            if isinstance(msg, tuple):
+                click.secho(msg[0], fg=msg[1])
             else:
-                print('Project')
-            print('-'*76)
-
-        lib = self._get_lib(lib_name)
-        if lib==None:
-            raise RuntimeError('%s not found' % lib_name)
-        env = lib.env
-
-        sources = lib.get_sources(lib.src_filter, lib.src_dir, self.source_files)
-        if not sources:
-            if self.verbose:
-                print('No source files, skipping %s' % lib.name)
-            return
-
-        args_file = tempfile.NamedTemporaryFile('w+t', delete=False)
-
-        args = [
-            env.subst("$PYTHONEXE"),
-            self._get_script_location(),
-            '--src-dir=%s' % lib.src_dir,
-            '--project-dir=%s' % self.project_dir,
-            '-@', args_file.name
-        ]
-        # if force:
-        #     args.append('--force')
-        if self.verbose:
-            args.append('--verbose')
-
-        for define in lib.cpp_defines:
-            args_file.write('--define=%s=%s\n' % (define[0], str(define[1])));
-            # args_file.write('--define=%s=%s\n' % (define[0], env.subst(str(define[1]))));
-
-        args_file.write('--define=__cplusplus=201103L\n');
-
-        mmcu = env.subst("$BOARD_MCU").lower()
-        if mmcu=="esp8266":
-            args_file.write('--define=ESP8266=1\n');
-        elif mmcu=="esp32":
-            args_file.write('--define=ESP32=1\n');
-        elif mmcu=="atmega328p":
-            args_file.write('--define=__AVR__=1\n');
-            args_file.write('--define=__AVR_ATmega328P=1\n');
-        elif mmcu=="atmega328pb":
-            args_file.write('--define=__AVR__=1\n');
-            args_file.write('--define=__AVR_ATmega328PB=1\n');
-        elif mmcu=="atmega48p":
-            args_file.write('--define=__AVR__=1\n');
-            args_file.write('--define=__AVR_ATmega48P=1\n');
-        elif mmcu=="atmega88p":
-            args_file.write('--define=__AVR__=1\n');
-            args_file.write('--define=__AVR_ATmega88P=1\n');
-        elif mmcu=="atmega168p":
-            args_file.write('--define=__AVR__=1\n');
-            args_file.write('--define=__AVR_ATmega168P=1\n');
-        else:
-            print("WARNING: -mmcu=%s not supported. Some defines might be missing. Check https://gcc.gnu.org/onlinedocs/gcc/AVR-Options.html for a full list" % mmcu);
-
-        for src in sources:
-            args_file.write('--source=%s\n' % src)
-
-        for include_dir in lib.include_dirs:
-            args_file.write('--include-dir=%s\n' % include_dir)
-
-        for arg in lib.extra_args:
-            args_file.write(arg);
-            args_file.write('\n')
-
-        args.append('2>&1')
-
-        if self.verbose:
-            parts = []
-            for arg in args:
-                parts.append(shlex.quote(arg))
-            parts[0] = args[0]
-            print(' '.join(parts))
-
-        args_file.close();
-
-        if self.verbose:
-            with open(args_file.name, 'rt') as f:
-                print('arguments file %s:' % args_file.name)
-                n = 0
-                for line in (line.strip() for line in f.readlines() if line.strip()):
-                    print(line)
-                print('<EOF>')
-
-        try:
-            popen = subprocess.run(args, shell=True)
-        except Exception as e:
-            raise e
-        finally:
-            os.unlink(args_file.name);
-
-        return_code = popen.returncode
-        if return_code!=0:
-            print('%s failed to run: %s' % (path.basename(self._get_script_location()), str(return_code)))
-            sys.exit(return_code)
+                click.secho(msg, fg=fg)
+        click.secho('-'*76)
 
 
-    def run_build_spgm(self, target, source, env):
-        print('%sBUILDSPGM%s' % ('-'*20,'-'*20))
-        for lib in self.projenv.GetLibBuilders():
-            self.build_spgm_lib(lib.name, lib.env, lib)
-        self.build_spgm_lib(None, env)
+    def init_spgm_build(self, env):
+        SpgmConfig.debug('init_spgm_build', True)
+        for env in ([env] + [builder.env for builder in env.GetLibBuilders()]):
+            # print(dir(builder.env))
+            config = SpgmConfig(env)
+            if not config.is_source_excluded(config.project_src_dir):
+                include_dirs, paths_added = config.get_include_dirs()
+                SpgmConfig.debug('added include_dirs %s' % paths_added)
+            else:
+                SpgmConfig.debug('project_src_dir %s is excluded, skipping include_dirs' % config.project_src_dir)
 
-    def export_database(self, config, type):
-        gen = Generator(config, [])
-        gen.language = config.output_language
-        gen.read_json_database(config.json_database, config.json_build_database)
+    # register process nodes for all C/C++ source files
+    def register_middle_ware(self, env):
+        config = SpgmConfig(env)
+        def process_node(node: FS.File):
+            if node:
+                file = node.srcnode().get_abspath()
+                if file==config.declaration_file:
+                    return None
+                for pattern in config.source_excludes:
+                    if fnmatch.fnmatch(file, pattern):
+                        return node
+                self.source_files.append(node)
+                return node
+            return None
 
-        gen.merge_items(None)
+        for suffix in ['c', 'C', 'cc', 'cpp', 'ino', 'INO']:
+            env.AddBuildMiddleware(process_node, '*.' + suffix)
 
-        print('FLASH_STRING_GENERATOR_AUTO_INIT(')
+        def print_all(node):
+            rel_path = node.get_abspath()
+            if rel_path.startswith(config.project_dir):
+                rel_path = rel_path[len(config.project_dir) + 1:]
 
-        def escape(s):
-            return '"%s"' % s.replace('\\', '\\\\').replace('"', '\\"')
+            SpgmConfig.debug('Node %s' % (rel_path))
+            return node
 
-        for item in sorted(gen._merged.values(), key=lambda item: item.name):
-            if (\
-                    type==ExportType.AUTO and item.has_auto_value \
-                ) or ( \
-                    type==ExportType.SOURCE and item.type==ItemType.FROM_SOURCE \
-                ) or ( \
-                    type==ExportType.CONFIG and item.type==ItemType.FROM_CONFIG \
-                ) or ( \
-                    type==ExportType.ALL \
-                ):
-                parts = [item.name, escape(item.value)]
-
-                item = item # type: Item
-                trans = item.i18n.values()
-                if trans:
-                    for lang in trans:
-                        parts.append('%s: %s' % (','.join(lang.lang), escape(lang.value)))
-
-                print('    // %s' % item.get_locations_str())
-                print('    AUTO_STRING_DEF(%s)' % ', '.join(parts))
-
-        print(');')
-
-    def run_export_config(self, target, source, env):
-        self.export_database(SpgmConfig(env), ExportType.CONFIG)
-
-    def run_export_all(self, target, source, env):
-        self.export_database(SpgmConfig(env), ExportType.ALL)
-
-    def run_export_auto(self, target, source, env):
-        self.export_database(SpgmConfig(env), ExportType.AUTO)
+        # if SpgmConfig._debug:
+        #     env.AddBuildMiddleware(print_all)
 
 
-    def run_install_requirements(self, source, target, env):
-        env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
-
+    def add_pre_actions(self, env):
+        SpgmConfig.debug('spgm_extra_script.add_pre_actions', True)
+        for source in self.source_files:
+            env.AddPreAction(source.get_path() + '.o', self.run_spgm_generator)
+        # env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
 
     def run_spgm_generator(self, target, source, env):
 
-
         start_time = time.monotonic()
-
         config = SpgmConfig(env)
 
         if self.log_file==None:
@@ -265,20 +120,11 @@ class SpgmExtraScript(object):
             for node in self.source_files:
                 self.log_file.write('%s -> %s\n' % (node.get_abspath(), node.srcnode().get_abspath()))
 
-
         SpgmConfig.debug('source files', True)
         files = [] # type: List[FS.File]
         for file in source:
-            include = True
             file = file.get_abspath()
-            if file==config.definition_file:
-                continue
-            for exclude in config.source_excludes:
-                # SpgmConfig.debug('fnmatch (%s, %s) = %s' % (file, exclude, fnmatch.fnmatch(file, exclude)))
-                if fnmatch.fnmatch(file, exclude):
-                    include = False
-                    break
-            if include:
+            if file!=config.definition_file and not config.is_source_excluded(file):
                 SpgmConfig.debug('source %s' % file)
                 files.append(file)
 
@@ -383,42 +229,188 @@ class SpgmExtraScript(object):
             SpgmConfig.verbose('Releasing lock...')
             self.lock.release()
 
-    def run_recompile_auto_strings(self, target, source, env):
-        SpgmConfig.debug('recompile auto strings')
-        SpgmExtraScript._touch_output_files(env)
 
-    # register process nodes for all C/C++ source files
-    def register_middle_ware(self, env):
 
-        config = SpgmConfig(env)
+    # def build_spgm_lib(self, lib_name, env, lib_org=None):
 
-        def process_node(node: FS.File):
-            if node:
-                file = node.srcnode().get_abspath()
+    #     # print(env.get("PIOBUILDFILES"))
+    #     # print(dir(env))
+    #     print(env.Dump())
+    #     sys.exit(0)
 
-                if file==config.declaration_file:
-                    return None
+    #     if not self.libs:
+    #         if self.verbose:
+    #             print("Creating libraries...")
+    #         self.create_libs(self.env, self.projenv)
 
-                for pattern in config.source_excludes:
-                    if fnmatch.fnmatch(file, pattern):
-                        return node
-                self.source_files.append(node)
-                return node
-            return None
+    #     if self.verbose:
+    #         print('-'*76)
+    #         if lib_name:
+    #             print('Library: %s' % lib_name)
+    #         else:
+    #             print('Project')
+    #         print('-'*76)
 
-        for suffix in env['CPPSUFFIXES']:
-            env.AddBuildMiddleware(process_node, '*%s' % suffix)
+    #     lib = self._get_lib(lib_name)
+    #     if lib==None:
+    #         raise RuntimeError('%s not found' % lib_name)
+    #     env = lib.env
 
-        # def process_linker_node(node: FS.File):
-        #     file = node.get_abspath()
-        #     print('LINKER %s' % file)
+    #     sources = lib.get_sources(lib.src_filter, lib.src_dir, self.source_files)
+    #     if not sources:
+    #         if self.verbose:
+    #             print('No source files, skipping %s' % lib.name)
+    #         return
 
-        # for suffix in ['*.o', '*.a']:
-        #     env.AddBuildMiddleware(process_linker_node, suffix)
+    #     args_file = tempfile.NamedTemporaryFile('w+t', delete=False)
 
-    def add_pre_actions(self, env):
-        for source in self.source_files:
-            env.AddPreAction(source.get_path() + '.o', self.run_spgm_generator)
+    #     args = [
+    #         env.subst("$PYTHONEXE"),
+    #         self._get_script_location(),
+    #         '--src-dir=%s' % lib.src_dir,
+    #         '--project-dir=%s' % self.project_dir,
+    #         '-@', args_file.name
+    #     ]
+    #     # if force:
+    #     #     args.append('--force')
+    #     if self.verbose:
+    #         args.append('--verbose')
+
+    #     for define in lib.cpp_defines:
+    #         args_file.write('--define=%s=%s\n' % (define[0], str(define[1])));
+    #         # args_file.write('--define=%s=%s\n' % (define[0], env.subst(str(define[1]))));
+
+    #     args_file.write('--define=__cplusplus=201103L\n');
+
+    #     mmcu = env.subst("$BOARD_MCU").lower()
+    #     if mmcu=="esp8266":
+    #         args_file.write('--define=ESP8266=1\n');
+    #     elif mmcu=="esp32":
+    #         args_file.write('--define=ESP32=1\n');
+    #     elif mmcu=="atmega328p":
+    #         args_file.write('--define=__AVR__=1\n');
+    #         args_file.write('--define=__AVR_ATmega328P=1\n');
+    #     elif mmcu=="atmega328pb":
+    #         args_file.write('--define=__AVR__=1\n');
+    #         args_file.write('--define=__AVR_ATmega328PB=1\n');
+    #     elif mmcu=="atmega48p":
+    #         args_file.write('--define=__AVR__=1\n');
+    #         args_file.write('--define=__AVR_ATmega48P=1\n');
+    #     elif mmcu=="atmega88p":
+    #         args_file.write('--define=__AVR__=1\n');
+    #         args_file.write('--define=__AVR_ATmega88P=1\n');
+    #     elif mmcu=="atmega168p":
+    #         args_file.write('--define=__AVR__=1\n');
+    #         args_file.write('--define=__AVR_ATmega168P=1\n');
+    #     else:
+    #         print("WARNING: -mmcu=%s not supported. Some defines might be missing. Check https://gcc.gnu.org/onlinedocs/gcc/AVR-Options.html for a full list" % mmcu);
+
+    #     for src in sources:
+    #         args_file.write('--source=%s\n' % src)
+
+    #     for include_dir in lib.include_dirs:
+    #         args_file.write('--include-dir=%s\n' % include_dir)
+
+    #     for arg in lib.extra_args:
+    #         args_file.write(arg);
+    #         args_file.write('\n')
+
+    #     args.append('2>&1')
+
+    #     if self.verbose:
+    #         parts = []
+    #         for arg in args:
+    #             parts.append(shlex.quote(arg))
+    #         parts[0] = args[0]
+    #         print(' '.join(parts))
+
+    #     args_file.close();
+
+    #     if self.verbose:
+    #         with open(args_file.name, 'rt') as f:
+    #             print('arguments file %s:' % args_file.name)
+    #             n = 0
+    #             for line in (line.strip() for line in f.readlines() if line.strip()):
+    #                 print(line)
+    #             print('<EOF>')
+
+    #     try:
+    #         popen = subprocess.run(args, shell=True)
+    #     except Exception as e:
+    #         raise e
+    #     finally:
+    #         os.unlink(args_file.name);
+
+    #     return_code = popen.returncode
+    #     if return_code!=0:
+    #         print('%s failed to run: %s' % (path.basename(self._get_script_location()), str(return_code)))
+    #         sys.exit(return_code)
+
+    def export_database(self, config, type):
+        gen = Generator(config, [])
+        gen.language = config.output_language
+        gen.read_json_database(config.json_database, config.json_build_database)
+
+        gen.merge_items(None)
+
+        print('FLASH_STRING_GENERATOR_AUTO_INIT(')
+
+        def escape(s):
+            return '"%s"' % s.replace('\\', '\\\\').replace('"', '\\"')
+
+        for item in sorted(gen._merged.values(), key=lambda item: item.name):
+            if (\
+                    type==ExportType.AUTO and item.has_auto_value \
+                ) or ( \
+                    type==ExportType.SOURCE and item.type==ItemType.FROM_SOURCE \
+                ) or ( \
+                    type==ExportType.CONFIG and item.type==ItemType.FROM_CONFIG \
+                ) or ( \
+                    type==ExportType.ALL \
+                ):
+                parts = [item.name, escape(item.value)]
+
+                item = item # type: Item
+                trans = item.i18n.values()
+                if trans:
+                    for lang in trans:
+                        parts.append('%s: %s' % (','.join(lang.lang), escape(lang.value)))
+
+                print('    // %s' % item.get_locations_str())
+                print('    AUTO_STRING_DEF(%s)' % ', '.join(parts))
+
+        print(');')
+
+    def run_export_config(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.CONFIG)
+
+    def run_export_all(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.ALL)
+
+    def run_export_auto(self, target, source, env):
+        self.export_database(SpgmConfig(env), ExportType.AUTO)
+
+    def run_install_requirements(self, source, target, env):
+        # env.Execute("$PYTHONEXE -m pip install --upgrade pip")
+        env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
+
+        version = None
+        try:
+            from pcpp.preprocessor import Preprocessor, OutputDirective, Action
+            import pcpp
+            version = pcpp.__version__
+        except Exception as e:
+            self.box('Installation was not succesful. %s' % e, fg='red')
+            env.Exit(1)
+
+        if version=='1.22':
+            self.box('Requirements have been successfully installed', fg='green')
+        else:
+            self.box((('Requirements have been installed.', 'green'), ('Warning: version mismatch pcpp==%s not 1.22 - If any issues occur, try to install the correct version' % version, 'yellow')))
+
+
+    def run_spgm_build(self, target, source, env):
+        self.add_pre_actions(env)
 
 
 if int(ARGUMENTS.get("PIOVERBOSE", 0)):
@@ -429,6 +421,13 @@ SpgmConfig.verbose('SPGM PRESCRIPT', True)
 if not hasattr(generator, 'spgm_extra_script'):
     SpgmConfig._debug = SpgmConfig(env).enable_debug
     generator.spgm_extra_script = SpgmExtraScript()
-    generator.spgm_extra_script.register_middle_ware(env)
-    # force recompilation of the auto strings source
-    SpgmExtraScript._touch_output_files(env)
+
+spgm_extra_script = generator.spgm_extra_script
+
+env.AddCustomTarget("spgm_build", [env.get("PIOMAINPROG")], [], title="build spgm strings", description=None, always_build=False)
+env.AddCustomTarget("spgm_install_requirements", None, [ lambda target, source, env: click.secho('Installing requirements for SPGM generator...', fg='yellow') ], title="install requirements", description="install requirements for SPGM generator", always_build=True)
+env.AddCustomTarget("spgm_export_auto", None, [], title="export spgm auto strings", description="export SPGM strings marked as auto", always_build=True)
+env.AddCustomTarget("spgm_export_config", None, [], title="export spgm config", description="export SPGM strings marked from config database", always_build=True)
+env.AddCustomTarget("spgm_export_all", None, [], title="export entire spgm database", description="export all SPGM strings", always_build=True)
+
+spgm_extra_script.register_middle_ware(env)

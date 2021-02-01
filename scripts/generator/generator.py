@@ -35,6 +35,24 @@ class FilterType(enum.Enum):
         return str(self.value)
 
 
+class FileLocation(object):
+    def __init__(self, source, line, type):
+        self.source = source
+        self.line = line
+        self.type = type
+
+class ValueObject(object):
+    def __init__(self, value=None):
+        self._value = value
+
+    @property
+    def has_value(self):
+        return self._value!=None
+
+    @property
+    def value(self):
+        return self._value;
+
 
 class Generator(object):
 
@@ -45,6 +63,10 @@ class Generator(object):
         self._merged = None
         self._language = {'default': 'default'} # type: Dict[str, List[str]]
         self._build = BuildDatabase()
+
+        self._database_items = {} # type: Dict[str, Item]
+        self._files_items = {} # type: Dict[str, Dict[FileLocation, Item]]
+        self._build_items = {} # Dict[str, Dict[FileLocation, Item]]
 
     @property
     def config(self):
@@ -80,11 +102,11 @@ class Generator(object):
 
         self._build.clear()
         if os.path.exists(build_filename):
-            SpgmConfig.debug('reading build database', True)
+            # SpgmConfig.debug('reading build database', True)
             try:
                 with open(build_filename, 'rt') as file:
                     self._build._fromjson(json.loads(file.read()))
-                SpgmConfig.debug(self._build.__str__())
+                # SpgmConfig.debug(self._build.__str__())
             except Exception as e:
                 SpgmConfig.verbose('cannot read build database: %s' % e);
 

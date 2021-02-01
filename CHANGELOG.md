@@ -2,6 +2,7 @@
 
 ## 0.1.1 (work-in-progress)
 
+- PlatformIO 5.0 support
 - Cache for configuration
 - Fixed exporting static defintion
 - Copying locations from build database to database

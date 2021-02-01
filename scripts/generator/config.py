@@ -118,6 +118,7 @@ class SpgmConfig(object):
 
     def __cache(name, lazy_load):
         if not name in SpgmConfig._cache:
+            # SpgmConfig.debug('creating cache entry for %s' % name)
             SpgmConfig._cache[name] = lazy_load()
         return SpgmConfig._cache[name]
 
@@ -133,10 +134,13 @@ class SpgmConfig(object):
     def get_cache(self, name):
         name = self._cache_item_name(name)
         if not name in SpgmConfig._cache:
+            # SpgmConfig.debug('cache entry for %s is empty' % name)
             return None
+        # SpgmConfig.debug('getting cache for %s' % name)
         return SpgmConfig._cache[name]
 
     def set_cache(self, name, value):
+        # SpgmConfig.debug('setting cache for %s' % name)
         name = self._cache_item_name(name)
         SpgmConfig._cache[name] = value
 
@@ -144,6 +148,7 @@ class SpgmConfig(object):
     def __init__(self, env):
         self._env = env
         self.project_src_dir = self.cache('project_src_dir', lambda: path.abspath(self._env.subst('$PROJECT_SRC_DIR')))
+        self.project_dir = self.cache('project_dir', lambda: path.abspath(self._env.subst('$PROJECT_DIR')))
 
     # def _make_relative_to(source_path, target_path):
     #     source_path = path.abspath(source_path)
@@ -277,6 +282,22 @@ class SpgmConfig(object):
         return self.cache('output_language', lambda: self._subst_list(self._get_string('output_language', 'default'), SplitSepType.WHITESPACE))
 
     @property
+    def auto_run(self):
+        auto_run = self.cache('auto_run', lambda: self._get_string('auto_run', 'always').strip().lower())
+        auto_run_options = ['always', 'never', 'after_clean']
+        if auto_run in auto_run_options:
+            return auto_run
+        raise RuntimeError('Invalid setting for custom_spgm_generator.auto_run: got %s: expected %s' % (auto_run, auto_run_options))
+
+    @property
+    def is_clean(self):
+        return not path.isfile(self.json_build_database)
+
+    @property
+    def is_first_run(self):
+        return not (path.isfile(self.declaration_file) and path.isfile(self.definition_file))
+
+    @property
     def definition_file(self):
         return self.cache('definition_file', lambda: self._get_path('definition_file', '$PROJECT_SRC_DIR/spgm_auto_strings.cpp'))
 
@@ -318,6 +339,10 @@ class SpgmConfig(object):
         return self.cache('pcpp_defines', lambda: self._normalize_defines_list(self._get_string('pcpp_defines')))
 
     def get_include_dirs(self):
+
+        if self.is_cached('include_dirs'):
+            return (self.get_cache('include_dirs'), [])
+
         parts = [] # type: List[str]
         parts.extend(self._subst_list(self._get_string('include_dirs'), SubstListType.ABSPATH))
 
@@ -337,142 +362,25 @@ class SpgmConfig(object):
         if not dir in cpp_path and not dir in add_path:
             add_path.append(dir)
         if add_path:
+            self._env.Replace(BUILD_FLAGS=self._env['BUILD_FLAGS'] + ['-I%s' % path for path in add_path])
             self._env.Replace(CPPPATH=self._env['CPPPATH'] + add_path)
             cpp_path = self._subst_list(self._env['CPPPATH'], SubstListType.ABSPATH)
             SpgmConfig.debug('added %s to %s' % (add_path, cpp_path))
 
         parts.extend(cpp_path)
         parts.append(project_include_dir)
-        return parts
+
+        self.set_cache('include_dirs', parts)
+
+        return (parts, add_path)
 
     @property
     def include_dirs(self):
-        return self.cache('include_dirs', self.get_include_dirs)
+        return self.get_include_dirs()[0]
 
-# class SpgmProjectConfig(object):
-#     def __init__(self, env):
-#         self.src_dir = path.abspath(env.subst('$PROJECT_SRC_DIR'))
-#         tmp = []
-#         tmp = SpgmConfig.normalize_str_list(SpgmConfig.get_spgm_include_dirs(env), self.src_dir)
-#         tmp.extend(SpgmConfig.normalize_str_list(env['CPPPATH'], self.src_dir))
-#         ip = SpgmConfig.normalize_str_list(env.subst('$PROJECT_INCLUDE_DIR'), self.src_dir)
-#         if ip:
-#             tmp.extend(ip)
-#         else:
-#             tmp.append(self.src_dir)
-#         self.include_dirs = tmp
-
-#         tmp = env.subst(env.GetProjectOption('custom_spgm_generator.spgm_include_ignore', default=''))
-#         tmp = SpgmConfig.normalize_str_list(tmp, self.src_dir)
-#         filename = self.config.auto_strings_cpp
-#         if not filename in tmp:
-#             tmp.append(filename)
-#         filename = self.config.auto_strings_header
-#         if not filename in tmp:
-#             tmp.append(filename)
-#         filename = self.config.json_database
-#         if not filename in tmp:
-#             tmp.append(filename)
-#         self.include_ignore = tmp
-
-#         self.cpp_defines = SpgmConfig.normaline_defines_list(self.env.get('$CPPDEFINES'))
-
-#         self.extra_args = []
-#         self.source = []
-
-#         self.src_filter = []
-#         for filter in SpgmConfig.normalize_str_list(env.subst(' '.join(env.GetProjectOption('src_filter'))), sep='>'):
-#             filter = env.subst(filter)
-#             if filter:
-#                 filter = filter.strip()
-#                 if filter:
-#                     self.src_filter.append(filter + '>')
-
-# class SpgmLibraryConfig(object):
-#     def __init__(self, lib, env):
-#         self.src_dir = lib.src_dir
-#         tmp = []
-#         if lib.include_dir:
-#             dir_name = lib.include_dir.strip()
-#             if dir_name:
-#                 dir_name = SpgmBase.prepend_path(dir_name, lib.src_dir)
-#                 if dir_name not in tmp:
-#                     tmp.append(dir_name)
-#         else:
-#             tmp.append(SpgmConfig.prepend_path(lib.src_dir, None))
-#         for dir_name in lib.get_include_dirs():
-#             if dir_name:
-#                 dir_name = dir_name.strip()
-#                 if dir_name:
-#                     dir_name = SpgmConfig.prepend_path(dir_name, lib.src_dir)
-#                     if dir_name not in tmp:
-#                         tmp.append(dir_name)
-#         self.include_dirs = tmp
-
-#         self.cpp_defines = [] #SpgmBase.normaline_defines_list(lib.cppdefines)
-
-#         self.include_ignore = []
-#         self.extra_args = []
-#         self.source = []
-#         self.src_filter = lib.src_filter
-
-# class SpgmTargetConfig(SpgmConfig):
-#     def __init__(self, name, env, lib=None):
-#         self._name = name
-#         self._env = env
-#         if lib:
-#             self._target = SpgmLibraryConfig(lib, env)
-#         else:
-#             self._target = SpgmProjectConfig(env)
-
-#     def match_src_filter(self, file, src_filter: List[str], src_dir):
-#         result = FilterType.NO_MATCH
-#         file = SpgmConfig.prepend_path(file, src_dir)
-#         if not path.isfile(file):
-#             return None
-#         debug = False
-#         for filter in src_filter:
-#             pattern = None
-#             type = None
-#             if filter.endswith('>'):
-#                 if filter.startswith('+<'):
-#                     pattern = filter[2:-1]
-#                     type = FilterType.INCLUDE
-#                 elif filter.startswith('-<'):
-#                     pattern = filter[2:-1]
-#                     type = FilterType.EXCLUDE
-#             if pattern==None:
-#                 raise RuntimeError('invalid filter: %s' % filter)
-#             else:
-#                 is_dir = pattern.endswith('/') or pattern.endswith('\\') or pattern.endswith('.')
-#                 pattern = SpgmConfig.prepend_path(pattern, src_dir)
-#                 if is_dir and not pattern.endswith('*'):
-#                     pattern += os.sep + '*'
-
-#             if fnmatch.fnmatch(file, pattern):
-#                 result = type
-
-#             if debug:
-#                 def ll(s):
-#                     if len(s)>80:
-#                         return s[-80:]
-#                     return s
-#                 print('fnmatch(%s, %s)=%s end result=%s' % (ll(file), ll(pattern), type, result))
-
-#         if debug:
-#             print('match_src_filter %s=%s' % (file, result))
-#         return result
-
-#     def filter_sources(self, src_filter: List[str], src_dir, source_files: List[str]):
-#         tmp = []
-#         for source in source_files:
-#             if self.match_src_filter(source, src_filter, src_dir)==FilterType.INCLUDE:
-#                 tmp.append(source)
-#         self.source = tmp
-#         return self.source
-
-#     @property
-#     def name(self):
-#         if self._name==None:
-#             return '<project>'
-#         return '<library %s>' % self._name
+    def is_source_excluded(self, file):
+        for exclude in self.source_excludes:
+            # SpgmConfig.debug('fnmatch (%s, %s) = %s' % (file, exclude, fnmatch.fnmatch(file, exclude)))
+            if fnmatch.fnmatch(file, exclude):
+                return True
+        return False
