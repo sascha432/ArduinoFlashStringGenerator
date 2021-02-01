@@ -1,28 +1,111 @@
 # FlashString Generator for Ardunio with internationalization and localization
 
-This tool can generate PROGMEM strings from source code. It is based on [pcpp](https://pypi.org/project/pcpp/), a pure python C preprocessor.
+This tool can generate PROGMEM strings from source code and a database with support for translations. It is based on [pcpp](https://pypi.org/project/pcpp/), a pure python C preprocessor.
 
-Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Running the tool will check all source code and generate the defined PROGMEM strings. Multiple languages are supported, for example `SPGM(hello_world, "Hello World!", fr_FR: "Bonjour le monde!", de_DE: "Hallo Welt!")`. All strings/translations can be defined directly inside the source code or a JSON file. The location of definitions and usage is stored as well.
+Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Multiple languages are supported, for example `SPGM(hello_world, "Hello World!", fr_FR: "Bonjour le monde!", de_DE: "Hallo Welt!")`. All strings/translations can be defined directly inside the source code, a centrelized header file or the JSON database file. The location of definitions and usage is stored as well, to quickly find it in the source code.
 
 ## Change Log
 
-[Change Log v0.0.4](CHANGELOG.md)
-
-WARNING! file is not up to date and there were major changes. check examples in platform.ini
+Version 0.1.x is now integrated into for PlatformIO Core
 
 [Change Log v0.1.1](CHANGELOG.md)
 
 ## Requirements
 
-- pcpp (tested with 1.22)
+- PlatformIO Core 5.x (testd with version 5.1.0)
+- Python C Preprocessor, pcpp (tested with version 1.22)
 
-Install pcpp in a directory that is in the platformio path or use PIO to install it
+## Installation
+
+PlatformIO Core can be installed with
 
 ```bash
-pio run -t spgm_generator_install_requirements
+pip install platformio
+```
+or the entire [PlatformIO IDE](https://platformio.org/platformio-ide)
+
+### Getting the requirements for PIO
+
+To install pcpp, run
+
+```bash
+pio run -t spgm_install_requirements
 ```
 
-## Basic usage
+
+### platformio.ini
+
+```ini
+[env]
+lib_deps = ArduinoFlashStringGenerator
+
+extra_scripts =
+    pre:scripts/spgm_extra_script.py
+    post:scripts/post_extra_script.py
+```
+
+The configuration options can found in this `platformio.ini`. All variables start with `custom_spgm_generator.`
+
+### Required include directories
+
+Additional include_dirs have to be defined manually. PlatformIO does not provide the include_dirs for the compiler.
+
+Add all include directories to `custom_spgm_generator.include_dirs`
+
+Getting a list for gcc
+
+```bash
+$ echo "" | c:\users/sascha\.platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe -E -v -x c++ - -
+
+[...]
+#include "..." search starts here:
+#include <...> search starts here:
+ .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/include
+ .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/include-fixed
+ .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/../../../../avr/include
+End of search list.
+[...]
+
+$ echo "" | .platformio/packages/toolchain-xtensa@2.40802.200502/bin/xtensa-lx106-elf-g++.exe -E -v -x c++ -
+
+[...]
+include "..." search starts here:
+#include <...> search starts here:
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/xtensa-lx106-elf
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/backward
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/include
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/include-fixed
+ .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include
+ [...]
+
+```
+
+
+### Testing the setup
+
+After a successful setup, the `spgm_*` targets will show up in the list.
+
+```bash
+$ pio run --list-targets
+
+Environment    Group     Name                       Title                        Description
+-------------  --------  -------------------------  ---------------------------  -----------------------------------------------------
+example        Advanced  compiledb                  Compilation Database         Generate compilation database `compile_commands.json`
+example        Custom    spgm_build                 build spgm strings
+example        Custom    spgm_export_all            export entire spgm database  export all SPGM strings
+example        Custom    spgm_export_auto           export spgm auto strings     export SPGM strings marked as auto
+example        Custom    spgm_export_config         export spgm config           export SPGM strings marked from config database
+example        Custom    spgm_install_requirements  install requirements         install requirements for SPGM generator
+example        Generic   clean                      Clean
+example        Platform  bootloader                 Burn Bootloader
+example        Platform  fuses                      Set Fuses
+example        Platform  size                       Program Size                 Calculate program size
+example        Platform  upload                     Upload
+example        Platform  uploadeep                  Upload EEPROM
+```
+
+## Basic Usage
 
 ### Syntax
 
@@ -69,13 +152,17 @@ PROGMEM_STRING_DEF(This_is_my_text, "This is my text");
 Using a PROGMEM string required to include the header file with the declaration. `FlashStringGeneratorAuto.h` declares all strings and provides two macros for easy access.
 
 ```cpp
-const char *my_string = SPGM(name);
-const __FlashStringHelper *my_string = FSPGM(name);
+const char *my_string1 = SPGM(name1);
+const __FlashStringHelper *my_string2 = FSPGM(name2);
+auto my_string3_1 = FSPGM(name3)
+auto my_string3_2 = SPGM(name3)
 ```
 
-If a name is not defined, the tool will automatically create it and add it to the JSON database. It is marked as automatically created and can be modified later.
+If a name is not defined, the tool will automatically create it and add it to the JSON database. It is marked as `auto` and can be modified later. All `auto` items can be exported and added in bulk as well
 
-Defining a string in `(F)SPGM` can be done as well.
+### Defining a string with (F)SPGM
+
+A string and its translations can be defined with the (F)SPGM macro as well.
 
 ```cpp
 Serial.print(FSPGM(hello_word, "Hello World!"));
@@ -85,7 +172,9 @@ If the same name is defined multiple times, a notice is used while running the t
 
 ### Using AUTO_STRING_DEF
 
-This works like `(F)SPGM` and can be used to store strings in a centralized location. Unlike `PROGMEM_STRING_DECL/PROGMEM_STRING_DEF`, strings are not declared or defined until the tool has been executed. Different languages are supported as well.
+This works like `(F)SPGM` and can be used to store strings in a centralized location. Unlike `PROGMEM_STRING_DECL/PROGMEM_STRING_DEF`, strings are declared and defined during compilation.
+
+Different languages are supported as well.
 
 `AUTO_STRING_DEF` required to be wrapped with `FLASH_STRING_GENERATOR_AUTO_INIT()`
 
@@ -103,15 +192,13 @@ If a name cannot be found, the tool will create a beautified version of it.
 
 For example: This_is_my_text = "This is my text"
 
-After running the tool, it creates an entry in the JSON database where it can be changed and adds a copy to FlashStringGeneratorAuto.auto
-
-Strings that are not being used anymore are removed from the source and declaration, but kept in `FlashStringGeneratorAuto.json`
+Once the project is compiled with spgm_build enabled, the `auto` version is added to the JSON database and can be edited there.
 
 ### Internationalization and localization
 
 Besides the "default" translation, it is possible to define different languages. Macros that support translations are `FSPGM`, `SPGM` and `AUTO_STRING_DEF`.
 
-There is no restriction for the language name except it must be a valid C variable name. Multiple lanuages can be concatenated with `;`.
+There is no restriction for the language name except that it must be a valid C variable name. Multiple lanuages can be concatenated with `;`.
 
 For example:
 
@@ -119,26 +206,45 @@ For example:
 
 #### Using a different language
 
-To create PROGMEM strings for a different language, use the argument `--i18n`
+To create PROGMEM strings for a different language, add `custom_spgm_generator.output_language` to the environment.
 
-`--i18n=en-US`
-`--i18n=en-CA`
-`--i18n=en-GB`
-`--i18n=fr-CH`
-`--i18n=de-CH`
-`--i18n=it`
+```ini
 
-If a translation is missing, the default fallback is "default". A list of fallbacks can be specified by using a comma separated list as argument.
+[env:my_project]
+...
 
-The comparison is non-case sensitive, `-`and `_` are treated equally and `*` can used as wildcard.
+[env:my_project_en]
+extends = env:my_project
+custom_spgm_generator.output_language = en
 
-`--i18n=en-US,en,en-CA,en-GB,en-*,default`
+[env:my_project_fr]
+extends = env:my_project
+custom_spgm_generator.output_language = fr*
+
+```
+
+#### Fallback languages
+
+If a translation is missing, the fallback is "default". A list of fallbacks can be added by separating the names with newline or whitespace.
+
+The comparison is case insensitive, `-`and `_` are treated equally and `*` can used as wildcard.
+
+```ini
+custom_spgm_generator.output_language--i18n=en-US en-CA en-GB en en-*
+```
 
 ### More examples
 
-```cppp
+Macros can be used as name or inside the translation.
+
+```cpp
 #define TEXT_MACRO "macro"
 auto str = SPGM(macro_test, "This is using a " TEXT_MACRO);
+```
+
+```cpp
+#define VERSION "1.0"
+PROGMEM_STRING_DECL(firmware_name, "MyFirmware " VERSION)
 ```
 
 ```cpp
@@ -154,31 +260,13 @@ An example program for Arduino Nano boards is included that uses all options ava
 
 ... [example.cpp](src/example.cpp)
 
-## Using the standalone version
-
-For this example, you can run
-
-```bash
-python .\scripts\flashstringgen.py -d ./src --src-filter-include * --src-filter--exclude ignore_me.cpp --output-dir=./src/generated
-```
-
-It will scan all source files in `./src` and its sub directories, except `ignore_me.cpp` and create the files in `./src/generated`. The default file extension for source files is `.c`, `.cpp`and `.ino`.
-
-### FlashStringGeneratorAuto.json
-
-This file contains the database of all strings.
-
-#### Configuration options
-
-These are stored under the key `__FLASH_STRING_GENERATOR_CONFIG__`. When the file is created the first time, all default options are added.
-
 #### Translations
 
 The name of the string as key and contains all its information. If the default is defined in the source code, it cannot be changed in this file.
 
-It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file.
+It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying the JSON database file.
 
-***Warning***: If a string is defined in the source code, the definition in the file will be updated silently
+***Warning***: If a string is defined in the source code, the definition in the database file will be updated silently
 
 ```json
     "Example1": {                   // name of the string
@@ -212,7 +300,7 @@ It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRIN
     }
 ```
 
-### FlashStringGeneratorAuto.h
+### spgm_auto_strings.h
 
 Include this file when using any PROGMEM strings. You can also see where the strings are being used.
 
@@ -224,96 +312,25 @@ PROGMEM_STRING_DECL(Example2);
 ...
 ```
 
-## Using PlatformIO and extra_scripts
-
-If using PlatformIO, you can use extra_scripts to provide a target that creates the PROGMEM strings.
-
-Simply add `extra_scripts = scripts/extra_script.py` to your platformio.ini and execute it with `pio run -t buildspgm` or `pio run -t rebuildspgm`.
-
-Using external libraries with translations requires to add the source directory and source filter manually.
-
-### include_path
-
-Additional include_paths have to be defined manually. Platformio does not provide the include_path for the compiler.
-
-Getting a list for gcc and g++
-
-```bash
-# .platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe -E -v -
-
-[...]
-#include "..." search starts here:
-#include <...> search starts here:
- ~/.platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/include
- ~/.platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/include-fixed
- ~/.platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/../../../../avr/include
-End of search list.
-[...]
-
-.platformio/packages/toolchain-xtensa@2.40802.200502/bin/xtensa-lx106-elf-g++.exe -E -v -x c++ -
-
-[...]
-#include "..." search starts here:
-#include <...> search starts here:
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/xtensa-lx106-elf
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/backward
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/include
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/include-fixed
- ~/.platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include
-End of search list.
-[...]
-
-```
-
-### platformio.ini example
-
-This is an example that uses external libraries with translations and customizations.
-
-```ini
-extra_scripts =
-    ../ArduinoFlashStringGenerator/scripts/extra_script.py
-
-; additonal include directories that are processed by sub parsers
-custom_spgm_generator.include_path =
-    ${PROJECT_DIR}/lib/*/include/*
-    ${platformio.packages_dir}/toolchain-xtensa@2.40802.200502/xtensa-lx106-elf/include/c++/4.8.2/xtensa-lx106-elf
-    ${platformio.packages_dir}/toolchain-xtensa@2.40802.200502/lib/gcc/xtensa-lx106-elf/4.8.2/include
-    ${platformio.packages_dir}/toolchain-xtensa@2.40802.200502/xtensa-lx106-elf/include/c++/4.8.2
-    ${platformio.packages_dir}/toolchain-xtensa@2.40802.200502/xtensa-lx106-elf/include
-
-; ignore these files when included in any source
-custom_spgm_generator.ignore_includes =
-    ${platformio.packages_dir}/framework-arduinoespressif8266/libraries/ESP8266mDNS/src/LEAmDNS.h
-    ${platformio.packages_dir}/toolchain-xtensa@2.40802.200502/xtensa-lx106-elf/include/c++/4.8.2/forward_list
-
-custom_spgm_generator.output_dir = ${platformio.src_dir}/generated
-custom_spgm_generator.extra_args =
-    --source-dir=${platformio.lib_dir}
-    --source-dir=${EXTERNAL_PROJECT_DIR}/lib/*/src/*
-    --src-filter-include=${EXTERNAL_PROJECT_DIR}/lib/*
-    --src-filter-include=${EXTERNAL_PROJECT_DIR}/lib/*
-    --src-filter-include=${EXTERNAL_PROJECT_DIR}/lib/*
-    --src-filter-exclude=${EXTERNAL_PROJECT_DIR}/lib/*/tests/*
-    --src-filter-exclude=${EXTERNAL_PROJECT_DIR}/lib/*/mock/*
-    --src-filter-exclude=${EXTERNAL_PROJECT_DIR}/lib/*/example/*
-    --include-file=Arduino_compat.h
-    -D__cplusplus=201103L
-    -DESP8266=1
-```
-
 ## Building the example
 
-Building PROGMEM strings for the provided example run
+Adding `custom_spgm_generator.auto_run = always` to the environment will automatically run the SPGM generator during compilation.
 
-`pio run -t buildspgm -e example`
+Since this slows down the process, it can be deactivated. After every change of the PROGMEM strings, the SPGM generator has to be used once.
 
-Forcing a rebuild without any changes detected
+Rebuilding/cleaning up the project will execute the SPGM generator during the first compilation using `custom_spgm_generator.auto_run = rebuild`
 
-`pio run -t rebuildspgm -e example`
+```bash
+pio run -t clean -e example
+pio run -e example
+```
 
-After that it can be compiled and uploaded
+Set `custom_spgm_generator.auto_run = never` to disable auto run completely and execute the SPGM generator manually by adding the target `spgm_build` to the PIO command.
 
-`pio run -t upload -e example`
 
-To automatically build PROGMEM strings every time a project is compiled, see platformio documentation how to add executing scripts for a target using extra_scripts
+`pio run -t spgm_build -t buildprog -e example`
+
+or
+
+`pio run -t spgm_build -t upload -e example`
+
