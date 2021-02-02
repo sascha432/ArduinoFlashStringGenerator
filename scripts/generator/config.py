@@ -284,7 +284,7 @@ class SpgmConfig(object):
     @property
     def auto_run(self):
         auto_run = self.cache('auto_run', lambda: self._get_string('auto_run', 'always').strip().lower())
-        auto_run_options = ['always', 'never', 'after_clean']
+        auto_run_options = ['always', 'never', 'rebuild']
         if auto_run in auto_run_options:
             return auto_run
         raise RuntimeError('Invalid setting for custom_spgm_generator.auto_run: got %s: expected %s' % (auto_run, auto_run_options))

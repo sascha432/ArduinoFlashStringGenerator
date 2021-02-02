@@ -105,7 +105,12 @@ class SpgmExtraScript(object):
         SpgmConfig.debug('spgm_extra_script.add_pre_actions', True)
         for source in self.source_files:
             env.AddPreAction(source.get_path() + '.o', self.run_spgm_generator)
-        # env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
+        env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
+
+    def run_mainprog(self, target, source, env):
+        config = SpgmConfig(env)
+        with open(config.definition_file, 'at') as file:
+            file.write('\n')
 
     def run_spgm_generator(self, target, source, env):
 
