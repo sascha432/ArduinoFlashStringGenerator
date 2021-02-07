@@ -13,27 +13,15 @@ import os
 import json
 import typing
 import re
-from .item import Item, ItemType, DebugType
+from .types import ItemType, DebugType
+from .item import Item
 from .config import SpgmConfig
 import enum
 import generator
-from .item import Item
 from .build_database import BuildDatabase
 from typing import List, Dict, Iterable, Union
 
-# def get_spgm_extra_script():
-#     return generator.spgm_extra_script
-
 setattr(generator, 'get_spgm_extra_script', lambda: generator.spgm_extra_script)
-
-class FilterType(enum.Enum):
-    NO_MATCH = 'NO_MATCH'
-    INCLUDE = 'INCLUDE'
-    EXCLUDE = 'EXCLUDE'
-
-    def __str__(self):
-        return str(self.value)
-
 
 class FileLocation(object):
     def __init__(self, source, line, type):

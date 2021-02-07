@@ -16,8 +16,7 @@ import tempfile
 import shlex
 import subprocess
 import fnmatch
-from generator import FilterType, Generator, SpgmConfig, Item, ItemType
-from generator import SpgmPreprocessor
+from generator import ExportType, ItemType, SpgmConfig, Item, Generator, SpgmPreprocessor
 import threading
 import generator
 from typing import List
@@ -29,37 +28,17 @@ import click
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
 
-class ExportType(enum.Enum):
-    AUTO = 1,
-    SOURCE = 2,
-    CONFIG = 3,
-    ALL = 4
-
 class SpgmExtraScript(object):
 
     def __init__(self):
         self.verbose = SpgmConfig._verbose
-        # self.env = env
-        # self.projenv = projenv
-        # self.libs = {}
         self.source_files = []
-        # self.project_src_dir = path.abspath(env.subst('$PROJECT_SRC_DIR'))
-        # self.project_dir = path.abspath(env.subst('$PROJECT_DIR'))
         self.lock = threading.Lock()
         self.log_file = None
 
-    def box(self, msgs, fg=None):
-        if isinstance(msgs, str):
-            msgs = (msgs,)
-        click.secho('-'*76)
-        for msg in msgs:
-            if isinstance(msg, tuple):
-                click.secho(msg[0], fg=msg[1])
-            else:
-                click.secho(msg, fg=fg)
-        click.secho('-'*76)
-
-
+    #
+    # Setup SPGM builder
+    #
     def init_spgm_build(self, env):
         SpgmConfig.debug('init_spgm_build', True)
         for env in ([env] + [builder.env for builder in env.GetLibBuilders()]):
@@ -71,12 +50,15 @@ class SpgmExtraScript(object):
             else:
                 SpgmConfig.debug('project_src_dir %s is excluded, skipping include_dirs' % config.project_src_dir)
 
+    #
     # register process nodes for all C/C++ source files
+    #
     def register_middle_ware(self, env):
         config = SpgmConfig(env)
         def process_node(node: FS.File):
             if node:
                 file = node.srcnode().get_abspath()
+                # ignore declaration file to avoid a rebuild every time it is changed
                 if file==config.declaration_file:
                     return None
                 for pattern in config.source_excludes:
@@ -88,6 +70,7 @@ class SpgmExtraScript(object):
 
         for suffix in ['c', 'C', 'cc', 'cpp', 'ino', 'INO']:
             env.AddBuildMiddleware(process_node, '*.' + suffix)
+
 
         def print_all(node):
             rel_path = node.get_abspath()
@@ -101,17 +84,27 @@ class SpgmExtraScript(object):
         #     env.AddBuildMiddleware(print_all)
 
 
+    #
+    # add all PreActions for source and binary
+    #
     def add_pre_actions(self, env):
         SpgmConfig.debug('spgm_extra_script.add_pre_actions', True)
         for source in self.source_files:
             env.AddPreAction(source.get_path() + '.o', self.run_spgm_generator)
         env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
 
+    #
+    # force rebuild of mainprog
+    #
     def run_mainprog(self, target, source, env):
         config = SpgmConfig(env)
+        # append new line to change file modification time and hash
         with open(config.definition_file, 'at') as file:
             file.write('\n')
 
+    #
+    # Run SPGM generator on given target
+    #
     def run_spgm_generator(self, target, source, env):
 
         start_time = time.monotonic()
@@ -235,56 +228,6 @@ class SpgmExtraScript(object):
             self.lock.release()
 
 
-
-    # def build_spgm_lib(self, lib_name, env, lib_org=None):
-
-    #     # print(env.get("PIOBUILDFILES"))
-    #     # print(dir(env))
-    #     print(env.Dump())
-    #     sys.exit(0)
-
-    #     if not self.libs:
-    #         if self.verbose:
-    #             print("Creating libraries...")
-    #         self.create_libs(self.env, self.projenv)
-
-    #     if self.verbose:
-    #         print('-'*76)
-    #         if lib_name:
-    #             print('Library: %s' % lib_name)
-    #         else:
-    #             print('Project')
-    #         print('-'*76)
-
-    #     lib = self._get_lib(lib_name)
-    #     if lib==None:
-    #         raise RuntimeError('%s not found' % lib_name)
-    #     env = lib.env
-
-    #     sources = lib.get_sources(lib.src_filter, lib.src_dir, self.source_files)
-    #     if not sources:
-    #         if self.verbose:
-    #             print('No source files, skipping %s' % lib.name)
-    #         return
-
-    #     args_file = tempfile.NamedTemporaryFile('w+t', delete=False)
-
-    #     args = [
-    #         env.subst("$PYTHONEXE"),
-    #         self._get_script_location(),
-    #         '--src-dir=%s' % lib.src_dir,
-    #         '--project-dir=%s' % self.project_dir,
-    #         '-@', args_file.name
-    #     ]
-    #     # if force:
-    #     #     args.append('--force')
-    #     if self.verbose:
-    #         args.append('--verbose')
-
-    #     for define in lib.cpp_defines:
-    #         args_file.write('--define=%s=%s\n' % (define[0], str(define[1])));
-    #         # args_file.write('--define=%s=%s\n' % (define[0], env.subst(str(define[1]))));
-
     #     args_file.write('--define=__cplusplus=201103L\n');
 
     #     mmcu = env.subst("$BOARD_MCU").lower()
@@ -310,48 +253,11 @@ class SpgmExtraScript(object):
     #     else:
     #         print("WARNING: -mmcu=%s not supported. Some defines might be missing. Check https://gcc.gnu.org/onlinedocs/gcc/AVR-Options.html for a full list" % mmcu);
 
-    #     for src in sources:
-    #         args_file.write('--source=%s\n' % src)
 
-    #     for include_dir in lib.include_dirs:
-    #         args_file.write('--include-dir=%s\n' % include_dir)
-
-    #     for arg in lib.extra_args:
-    #         args_file.write(arg);
-    #         args_file.write('\n')
-
-    #     args.append('2>&1')
-
-    #     if self.verbose:
-    #         parts = []
-    #         for arg in args:
-    #             parts.append(shlex.quote(arg))
-    #         parts[0] = args[0]
-    #         print(' '.join(parts))
-
-    #     args_file.close();
-
-    #     if self.verbose:
-    #         with open(args_file.name, 'rt') as f:
-    #             print('arguments file %s:' % args_file.name)
-    #             n = 0
-    #             for line in (line.strip() for line in f.readlines() if line.strip()):
-    #                 print(line)
-    #             print('<EOF>')
-
-    #     try:
-    #         popen = subprocess.run(args, shell=True)
-    #     except Exception as e:
-    #         raise e
-    #     finally:
-    #         os.unlink(args_file.name);
-
-    #     return_code = popen.returncode
-    #     if return_code!=0:
-    #         print('%s failed to run: %s' % (path.basename(self._get_script_location()), str(return_code)))
-    #         sys.exit(return_code)
-
-    def export_database(self, config, type):
+    #
+    # export items from JSON database
+    #
+    def export_database(self, config, type: ExportType):
         gen = Generator(config, [])
         gen.language = config.output_language
         gen.read_json_database(config.json_database, config.json_build_database)
@@ -395,6 +301,10 @@ class SpgmExtraScript(object):
     def run_export_auto(self, target, source, env):
         self.export_database(SpgmConfig(env), ExportType.AUTO)
 
+
+    #
+    # install pcpp
+    #
     def run_install_requirements(self, source, target, env):
         # env.Execute("$PYTHONEXE -m pip install --upgrade pip")
         env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
@@ -405,15 +315,18 @@ class SpgmExtraScript(object):
             import pcpp
             version = pcpp.__version__
         except Exception as e:
-            self.box('Installation was not succesful. %s' % e, fg='red')
+            SpgmConfig.box('Installation was not succesful. %s' % e, fg='red')
             env.Exit(1)
 
         if version=='1.22':
-            self.box('Requirements have been successfully installed', fg='green')
+            SpgmConfig.box('Requirements have been successfully installed', fg='green')
         else:
-            self.box((('Requirements have been installed.', 'green'), ('Warning: version mismatch pcpp==%s not 1.22 - If any issues occur, try to install the correct version' % version, 'yellow')))
+            SpgmConfig.box((('Requirements have been installed.', 'green'), ('Warning: version mismatch pcpp==%s not 1.22 - If any issues occur, try to install the correct version' % version, 'yellow')))
 
 
+    #
+    # run SPGM generator on target
+    #
     def run_spgm_build(self, target, source, env):
         self.add_pre_actions(env)
 

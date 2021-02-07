@@ -3,17 +3,15 @@
 #
 
 import json
-import re
 from typing import List, Dict
-import sys
+from .location import Location
+from .item import Item
 
 class BuildDatabase(object):
 
     def __init__(self, locations=None):
         self.find = self.get
-        self.Location = getattr(sys.modules['generator.item'], 'Location')
-        self.Item = getattr(sys.modules['generator.item'], 'Item')
-        self._items = {} # type: Dict[str, List[self.Location]]
+        self._items = {} # type: Dict[str, List[Location]]
         if locations:
             self._fromjson(locations)
 
@@ -22,7 +20,7 @@ class BuildDatabase(object):
 
     def add(self, item):
         if item.name in self._items:
-            self.Item._merge_locations(self._items[item.name], item.locations)
+            Item._merge_locations(self._items[item.name], item.locations)
         else:
             self._items[item.name] = item.locations
 
@@ -36,8 +34,8 @@ class BuildDatabase(object):
 
     def _fromjson(self, locations):
         for name, locations in locations.items():
-            locations = [l for l in [self.Location(*location) for location in locations] if l.lineno>=0]
-            self._items[name] = self.Item._merge_locations(name in self._items and self._items[name] or [], locations)
+            locations = [l for l in [Location(*location) for location in locations] if l.lineno>=0]
+            self._items[name] = Item._merge_locations(name in self._items and self._items[name] or [], locations)
 
     def _tojson(self, indent=None):
         return json.dumps( \
@@ -47,4 +45,3 @@ class BuildDatabase(object):
 
     def __str__(self):
         return self._tojson(indent=4)
-        # return re.sub('((\[\[)|(\[)|\]\]|\])', lambda arg: (arg.group(1)=='[[' and '[(' or (arg.group(1)==']]' and ')]' or arg.group(1)=='[' and '(' or ')')), self._tojson().replace(']], "', ']],\n"')[2:-2])

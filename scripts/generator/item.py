@@ -3,268 +3,22 @@
 #
 
 import os
-import copy
-import enum
+# import copy
+# import enum
 import re
-from typing import List, Tuple, Union
-from .config import SpgmConfig
-
-DEFAULT_LANGUAGE = 'default'
-
-class ItemType(enum.Enum):
-    FROM_SOURCE = 0
-    FROM_CONFIG = -1
-    REMOVED = -2
-    FROM_BUILD_DATABASE = -3
-
-    # def __str__(self):
-    #     return str(self.value)
-
-class DefinitionType(enum.Enum):
-    DEFINE = 'DEFINE'
-    SPGM = 'SPGM'
-    AUTO_INIT = 'AUTO_INIT'
-
-    def __str__(self):
-        if self==DefinitionType.DEFINE:
-            return 'PROGMEM_STRING_DEF'
-        if self==DefinitionType.AUTO_INIT:
-            return 'AUTO_STRING_DEF'
-        return str(self.value).split('.')[-1]
-
-class DebugType(enum.Enum):
-    TOKEN = 'token'
-    PUSH_VALUE = 'push_value'
-    DUMP_ITEMS = 'dump_items'
-    EXCEPTION = 'exception'
-    ITEM_DEBUG_ATTR = 'item_debug_attr'
-    DUMP_READ_CONFIG = 'dump_read_config'
-    DUMP_WRITE_CONFIG = 'dump_write_config'
-    DUMP_MERGE_ITEMS = 'dump_merge_items'
+from typing import List
+# from typing import List, Tuple, Union
+# from .config import SpgmConfig
+from .types import DefinitionType, DebugType, ItemType
+from .location import SourceLocation
+from .i18n import i18n_config, i18n_lang, i18n
 
 ITEM_DEBUG = frozenset([DebugType.EXCEPTION])
-
-class SourceType(enum.Enum):
-    REL_PATH = 'rel'
-    ABS_PATH = 'abs'
-    REAL_PATH = 'real'
-    FILENAME = 'filename'
-
-class Location(object):
-    def __init__(self, source, lineno, definition_type='REMOVED'):
-        self.source = source
-        self.lineno = lineno
-        self.definition_type = DefinitionType(definition_type)
-
-    def format(self, fmt):
-        return fmt % ('%s:%s (%s)' % (self.source, self.lineno, self.definition_type.value))
-
-    def __eq__(self, o: object) -> bool:
-        return id(self)==id(o) or (isinstance(self.lineno, int) and isinstance(o.lineno, int) and self.source==o.source and self.lineno==o.lineno)
-
-    def __ne__(self, o: object) -> bool:
-        return not self.__eq__(o)
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
-        # if isinstance(self.lineno, ItemType):
-        #     if self.lineno==ItemType.FROM_SOURCE:
-        #         return '<source>'
-        #     elif self.lineno==ItemType.FROM_CONFIG:
-        #         return '<config>'
-        #     elif self.lineno==ItemType.REMOVED:
-        #         return '<removed>'
-        return str(tuple([self.source, str(self.lineno), str(self.definition_type.value)]))
-
-    def __hash__(self):
-        return hash('%s;%s;%s' % (self.source, self.lineno, self.definition_type.value))
-
-    def _tolist(self):
-        return [self.source, int(self.lineno), str(self.definition_type.value)]
-
-class SourceLocation(object):
-
-    display_source = SourceType.REL_PATH
-
-    def __init__(self, source, lineno):
-        self.source = source
-        self.lineno = lineno
-        self._locations = []
-
-    def append(self, source, lineno, definition_type):
-        if isinstance(lineno, int) and source!=None:
-            self._locations.append(Location(source, lineno, definition_type))
-
-    def remove(self, source, lineno):
-        if isinstance(lineno, int) and source!=None:
-            for location in self._locations:
-                if location.source==source and location.lineno==lineno:
-                    self._locations.remove(location)
-
-    # def validate(self, source, lineno):
-    #     return isinstance(lineno, int) and source!=None
-
-    # returns source:lineno or <config>
-    def get_source(self, config_file='<config>'):
-        if self.type==ItemType.FROM_CONFIG:
-            return config_file
-        return '%s:%u' % (self._source, self._lineno)
-
-    @property
-    def source(self):
-        if isinstance(self._lineno, ItemType):
-            return None
-        if SourceLocation.display_source==SourceType.FILENAME:
-            return os.path.basename(self._source)
-        return self._source
-
-    @source.setter
-    def source(self, source):
-        if source==None:
-            self._source = None
-            return
-        if not source:
-            raise RuntimeError('source is an empty string')
-        if SourceLocation.display_source==SourceType.REL_PATH:
-            self._source = source
-            return
-        if SourceLocation.display_source==SourceType.REAL_PATH:
-            self._source = os.path.realpath(source)
-            return
-        self._source = os.path.abspath(source)
-
-    @property
-    def full_source(self):
-        if isinstance(self._lineno, ItemType):
-            return None
-        return self._source
-
-    @property
-    def lineno(self):
-        if isinstance(self._lineno, ItemType):
-            return 0
-        return self._lineno
-
-    @lineno.setter
-    def lineno(self, lineno):
-        if not isinstance(lineno, (int, ItemType)):
-            raise RuntimeError('lineno not (int, ItemType): %s' % type(lineno))
-        self._lineno = lineno
-
-    @property
-    def type(self):
-        if isinstance(self._lineno, int):
-            return ItemType.FROM_SOURCE
-        return self._lineno
-
-    @type.setter
-    def type(self, value):
-        if value==ItemType.FROM_SOURCE and not isinstance(self._lineno, int):
-            raise RuntimeError('type=FROM_SOURCE not possible, use lineno=<int>')
-        self.lineno = value
-
-# stores translations with a list of languages
-class i18n_lang(object):
-    def __init__(self, lang, value):
-        if isinstance(lang, str):
-            lang = set(part.strip() for part in lang.split(';') if part and part.strip())
-        if isinstance(lang, set):
-            lang = list(lang)
-        self.lang = lang
-        self.value = value
-
-    def has_lang(self, lang):
-        return lang in self.lang
-
-    def __repr__(self):
-        return self.value
-
-    def __str__(self):
-        return '[%s]: "%s"' % (','.join(self.lang), self.value)
-
-# stores all translations in a dictionary with the name as key
-class i18n(object):
-    def __init__(self, arg):
-        self.arg = arg
-        self.translations = {}
-
-    @property
-    def lang(self):
-        return self.arg.lang
-
-    @property
-    def value(self):
-        if self.lang==None:
-            raise RuntimeError('language is None: %s:%u' % (self.arg.source, self.arg.lineno))
-        return self.translations[self.lang]
-
-    @value.setter
-    def value(self, value):
-        if self.lang==None:
-            raise RuntimeError('language is None: %s:%u' % (self.arg.source, self.arg.lineno))
-        item = i18n_lang(self.lang, value)
-        for lang in item.lang:
-            self.translations[lang] = item
-
-    def get(self, languages_regex):
-        for p_lang, lre in languages_regex.items():
-            for lang, obj in self.items():
-                if lre==DEFAULT_LANGUAGE:
-                    return None
-                elif lre.endswith(r'\Z'):
-                    if re.match(lre, lang, re.I):
-                        return (p_lang, lang, obj.value)
-                elif lang.lower()==lre:
-                    return (p_lang, lang, obj.value)
-        return None
-
-    def set(self, lang, value):
-        item = i18n_lang(lang, value)
-        for lang in item.lang:
-            if lang in self.translations and value!=self.translations[lang].value:
-                raise RuntimeError('cannot redefine value %s for %s: previous value %s' % (value, lang, self.translations[lang]))
-            self.translations[lang] = item
-
-    def cleanup(self):
-        del self.arg
-
-    def merge(self, merge_item):
-        for lang, item in merge_item.items():
-            if not lang in self.translations:
-                self.translations[lang] = item
-        merge_item.translations = self.translations
-
-    def info(self):
-        return self.__str__();
-
-    def items(self):
-        return self.translations.items()
-
-    def values(self):
-        return self.translations.values()
-
-    def __repr__(self):
-        return self.__str__(True)
-
-    def __str__(self, repr=False):
-        items = []
-        for lang, item in self.items():
-            if repr:
-                items.append('%s: "%s"' % (lang, item.__repr__()))
-            else:
-                items.append(item.__str__())
-        return ' '.join(items)
 
 class Item(SourceLocation):
 
     DebugType = DebugType
     DEBUG = ITEM_DEBUG
-
-    @property
-    def DEFAULT_LANGUAGE(self):
-        return DEFAULT_LANGUAGE
 
     # source/lineno             filename and line or None and ItemType
     # name                      name of the item
@@ -280,7 +34,7 @@ class Item(SourceLocation):
             raise RuntimeError('invalid definition_type: %s' % definition_type)
         self.definition_type = definition_type
         SourceLocation.append(self, source, lineno, definition_type)
-        self._lang = self.DEFAULT_LANGUAGE
+        self._lang = i18n_config.DEFAULT_LANGUAGE
         self._value_buffer = None
         self.i18n = i18n(self)
         self._arg_num = 0
@@ -303,7 +57,7 @@ class Item(SourceLocation):
         value = self.i18n.get(lang_regex)
         if value!=None:
             return value
-        return (self.DEFAULT_LANGUAGE, self.DEFAULT_LANGUAGE, self.value)
+        return (i18n_config.DEFAULT_LANGUAGE, i18n_config.DEFAULT_LANGUAGE, self.value)
 
     @property
     def value(self):
@@ -398,7 +152,7 @@ class Item(SourceLocation):
                 self._value = None
         else:
             if self.arg_num % 2 == 0:
-                if self.lang not in(None, self.DEFAULT_LANGUAGE):
+                if self.lang not in(None, i18n_config.DEFAULT_LANGUAGE):
                     raise RuntimeError('invalid language: %s' % (self))
                 if not self.has_value_buffer:
                     raise RuntimeError('language is None: %s' % self)

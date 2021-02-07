@@ -2,91 +2,23 @@
 # Author: sascha_lammers@gmx.de
 #
 
-import builtins
-import os
-import copy
-import fnmatch
+from .types import SubstListType, SplitSepType
+from .cache import SpgmCache
 from os import path
-from . import *
 from typing import List, Tuple
+import fnmatch
 import enum
 import re
 import click
-from pathlib import Path, PureWindowsPath
 
-# class SpgmBase(object):
+class SpgmConfig(SpgmCache):
 
-#     def _dump(node, path=[], objs=[]):
-#         objs.append(id(node))
-#         for name in dir(node):
-#             if not name.startswith('__'):
-#                 if hasattr(node, name):
-#                     attr = getattr(node, name)
-#                     if not id(attr) in objs:
-#                         tmp = copy.copy(path)
-#                         tmp.append(name)
-#                         print('%s %s' % ('.'.join(tmp), str(attr)))
-#                         SpgmBase._dump(attr, tmp, objs)
-
-#     # def get_spgm_include_dirs(env):
-#     #     return path.abspath(env.subst(env.GetProjectOption('custom_spgm_generator.spgm_include_dirs', default='')))
-
-#     # def get_spgm_extra_args(env):
-#     #     return SpgmBase.normalize_str_list(env.subst(env.GetProjectOption('custom_spgm_generator.extra_args', default='')))
-
-#     # change directory of path to absolute and if is a directory, append /.
-#     def _abspath(path_name, append_to_dir='.'):
-#         path_name = path.abspath(path_name)
-#         if path_name.endswith('*') or not path.isdir(path_name):
-#             return path_name
-#         return path.join(path_name, append_to_dir)
-
-#     def abspath(items):
-#         if isinstance(items, str):
-#             return SpgmBase._abspath(items)
-#         tmp = []
-#         for item in items:
-#             tmp.append(SpgmBase.abspath(item))
-#         return tmp
-
-    # def normalize_defines_list(defines) -> List[Tuple[str, str]]:
-    #     if isinstance(defines, str):
-    #         defines = defines.split('\n')
-    #     parts = []
-    #     if not defines:
-    #         return parts
-    #     for item in defines:
-    #         if isinstance(item, str):
-    #             item = item.strip()
-    #             if item:
-    #                 parts.append((item, '1'))
-    #         elif isinstance(item, (tuple, list)):
-    #             parts.append((str(item[0]), str(item[1])))
-    #     return parts
-
-    # def normalize_path_pattern_list(path_patterns):
-    #     parts = [] # type: List[str]
-    #     for name in path_patterns:
-    #         name = path.abspath(name) # type: str
-    #         if path.isdir(name) and not name.endswith('*'):
-    #             name = path.join(name, '*')
-    #         parts.append(name)
-    #     return parts
-
-class SubstListType(enum.Enum):
-    STR = 'str'
-    ABSPATH = 'abspath'
-    PATTERN = 'pattern'
-
-class SplitSepType(enum.Enum):
-    NEWLINE = r'[\r\n]'
-    WHITESPACE = r'\s'
-
-class SpgmConfig(object):
+    #
+    # static methods for terminal suppprt and debugging
+    #
 
     _verbose = False
     _debug = False
-    _cache = {}
 
     def echo(msg, title=None):
         if title==True:
@@ -116,77 +48,24 @@ class SpgmConfig(object):
         elif SpgmConfig._verbose:
             SpgmConfig.verbose(msg, title)
 
-    def __cache(name, lazy_load):
-        if not name in SpgmConfig._cache:
-            # SpgmConfig.debug('creating cache entry for %s' % name)
-            SpgmConfig._cache[name] = lazy_load()
-        return SpgmConfig._cache[name]
+    def box(self, msgs, fg=None):
+        if isinstance(msgs, str):
+            msgs = (msgs,)
+        click.secho('-'*76)
+        for msg in msgs:
+            if isinstance(msg, tuple):
+                click.secho(msg[0], fg=msg[1])
+            else:
+                click.secho(msg, fg=fg)
+        click.secho('-'*76)
 
-    def _cache_item_name(self, name):
-        return 'env_%s_item_%s' % (id(self._env), name)
-
-    def cache(self, name, lazy_load):
-        return SpgmConfig.__cache(self._cache_item_name(name), lazy_load)
-
-    def is_cached(self, name):
-        return self._cache_item_name(name) in SpgmConfig._cache
-
-    def get_cache(self, name):
-        name = self._cache_item_name(name)
-        if not name in SpgmConfig._cache:
-            # SpgmConfig.debug('cache entry for %s is empty' % name)
-            return None
-        # SpgmConfig.debug('getting cache for %s' % name)
-        return SpgmConfig._cache[name]
-
-    def set_cache(self, name, value):
-        # SpgmConfig.debug('setting cache for %s' % name)
-        name = self._cache_item_name(name)
-        SpgmConfig._cache[name] = value
-
-
+    #
+    # Config class
+    #
     def __init__(self, env):
-        self._env = env
+        SpgmCache.__init__(self, env)
         self.project_src_dir = self.cache('project_src_dir', lambda: path.abspath(self._env.subst('$PROJECT_SRC_DIR')))
         self.project_dir = self.cache('project_dir', lambda: path.abspath(self._env.subst('$PROJECT_DIR')))
-
-    # def _make_relative_to(source_path, target_path):
-    #     source_path = path.abspath(source_path)
-    #     target_path = path.abspath(target_path)
-    #     if PureWindowsPath(source_path).drive!=PureWindowsPath(target_path).drive:
-    #         raise RuntimeError('cannot create relative path of %s to %s' % (source_path, target_path))
-    #     if source_path==target_path:
-    #         return source_path
-    #     source = Path(source_path).parts
-    #     full_source = source
-    #     target = Path(target_path).parts
-    #     full_target = target
-    #     make_relative = []
-
-    #     num = min(len(source), len(target))
-    #     for n in range(1, num + 2):
-    #         if path.join(*source[0:n])!=path.join(*target[0:n]):
-    #             num = n
-    #             make_relative = ['..']*(len(full_source) - n + 2)
-    #             break
-    #     npl = list(full_source) + make_relative + list(full_target[num:])
-    #     # np = path.join(*npl)
-    #     # anp = path.abspath(np)
-    #     diff = len(full_target) - (len(full_source) - len(make_relative) + len(full_target) - num + 1)
-    #     # diff = len(full_target) - len(Path(anp).parts)
-    #     # print(diff)
-    #     if diff>=1:
-    #         diff -= 1
-    #         make_relative = make_relative[0:-1]
-    #         npl = list(full_source) + make_relative + list(full_target[num - diff:])
-
-    #     np = path.join(*npl)
-    #     # anp = path.abspath(np)
-    #     # print(anp)
-
-    #     if path.abspath(np)==target_path:
-    #         return path.normpath(np)
-    #     raise RuntimeError('cannot create relative path of %s to %s' % (source_path, target_path))
 
     def _get_abspath(self, name):
         if path.isabs(name):
@@ -324,7 +203,6 @@ class SpgmConfig(object):
     @property
     def source_excludes(self):
         return self.cache('source_excludes', lambda: self._subst_list(self._get_string('source_excludes'), SubstListType.PATTERN))
-#        return self.cache('source_excludes', lambda: self._subst_list('%s\n%s\n%s' % (self.definition_file, self.declaration_file, self._get_string('source_excludes')), SubstListType.PATTERN))
 
     @property
     def declaration_include_file(self):
