@@ -157,6 +157,10 @@ class SpgmConfig(SpgmCache):
         return self.cache('enable_debug', lambda: self._get_bool('enable_debug', False))
 
     @property
+    def add_unused(self):
+        return self.cache('add_unused', lambda: self._get_bool('add_unused', False))
+
+    @property
     def output_language(self):
         return self.cache('output_language', lambda: self._subst_list(self._get_string('output_language', 'default'), SplitSepType.WHITESPACE))
 
@@ -187,6 +191,10 @@ class SpgmConfig(SpgmCache):
     @property
     def json_database(self):
         return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
+
+    @property
+    def json_build_database_dir(self):
+        return self.cache('json_build_database_dir', lambda: self._get_path('json_build_database_dir', '$BUILD_DIR/spgm'))
 
     @property
     def json_build_database(self):

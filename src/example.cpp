@@ -8,6 +8,7 @@
 
 TestClass _test_class;
 
+
 // fixed definitions
 PROGMEM_STRING_DEF(Example1, "Example 1");
 PROGMEM_STRING_DEF(Example2, "Example 2");
@@ -29,6 +30,17 @@ FLASH_STRING_GENERATOR_AUTO_INIT(
 #define ___STRINGIFY(...)                   #__VA_ARGS__
 #define NEW_STRING_3                        3
 
+using JsonString = String;
+
+#define J(str)                                  FSPGM(webui_json_##str)
+#define JJ(str)                                 JsonString(FSPGM(webui_json_##str))
+#define WEBUI_PROGMEM_STRING_DEF(str)           PROGMEM_STRING_DEF(webui_json_##str, _STRINGIFY(str))
+#define WEBUI_PROGMEM_STRING_DECL(str)          PROGMEM_STRING_DECL(webui_json_##str)
+
+
+WEBUI_PROGMEM_STRING_DECL(type);
+WEBUI_PROGMEM_STRING_DEF(type);
+
 void setup() {
     Serial.begin(115200);
 }
@@ -48,6 +60,8 @@ void loop() {
     Serial.print(FSPGM(New_string_3));
     Serial.print(FSPGM(New_string));
     Serial.print(FSPGM(new_string, "new string lowercase"));
+    Serial.print(FSPGM(degree_celsius_utf8, "\xc2\xb0""C\xc2\xb0""F\xc2\xb0K"));
+
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
     Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3) ));
@@ -58,5 +72,10 @@ void loop() {
     char buffer[32];
     snprintf_P(buffer, sizeof(buffer), SPGM(CURRENCY, "%.2f", en-US:"$%.2f", en_CA:"CA$%.2f",en_au:"AU$%.2f",de;es;it;fr:"%.2fEUR"), 1.5);
     Serial.print(FSPGM(CURRENCY, "%.2f", de;bg: "%.2fEUR")); // redefintion merges translations
+
+    Serial.print(JJ(type));
+
     delay(1000);
 }
+
+

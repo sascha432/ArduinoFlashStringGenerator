@@ -7,19 +7,25 @@ try:
 except:
     pass
 from io import TextIOWrapper
+import pickle
 from SCons.Node import FS
 import sys
 import os
 import json
+import copy
 import typing
+import glob
 import re
-from .types import ItemType, DebugType
+import struct
+import pickle
+from os import path
+from .types import ItemType, DebugType, DefinitionType
 from .item import Item
 from .config import SpgmConfig
 import enum
 import generator
 from .build_database import BuildDatabase
-from typing import List, Dict, Iterable, Union
+from typing import List, Dict, Iterable, Union, ValuesView
 
 setattr(generator, 'get_spgm_extra_script', lambda: generator.spgm_extra_script)
 
@@ -41,10 +47,335 @@ class ValueObject(object):
     def value(self):
         return self._value;
 
+class Database(object):
+    def __init__(self, dir, target):
+        os.makedirs(dir, exist_ok=True)
+        self._dir = path.abspath(dir);
+        self._json_file = path.join(dir, '_spgm.json');
+        self._items = {}
+        self._items_per_file = {}
+        self._target = target;
+        if target!=None:
+            sources = []
+            for n in self._target:
+                sources.append(n.srcnode().get_path())
+                # sources.append(n.srcnode().get_abspath())
+            self._sources = ','.join(sources)
+            self._sources_hash = hash(self._sources)
+
+
+    def read_shard(self, path):
+        with open(path, 'rb') as file:
+            items = pickle.load(file)
+        for sources, items in items.items():
+            self._items_per_file[sources] = items
+            for item in self._items_per_file[sources].values():
+                item['vdb'] = True
+                item['adb'] = True
+                self.merge(item)
+
+    # read database
+    def read(self):
+
+        # TODO add locking
+        # TODO add modification time and size to detectg changes
+
+        self._items = {}
+        self._items_per_file = {}
+        if self._target==None:
+            return
+
+        dir = path.join(self._dir, '*.pickle')
+        files = glob.glob(dir);
+        if not files:
+            return
+
+        shards = len(files)
+        for file in files:
+            self.read_shard(file)
+
+        # with open(self._file, 'rb') as file:
+        #     self._items_per_file = pickle.load(file)
+
+        # for sources, items in self._items_per_file.items():
+        #     # print('sources %s items %s' % (sources,items))
+        #     for name, item in items.items():
+        #         # print('name=%s item=%s' %( name,item))
+        #         item['vdb'] = True
+        #         item['adb'] = True
+        #         self.merge(item)
+
+        print('read %s: %u entries %u locations %u shards' % tuple([dir] + list(self.llen(self._items)) + [shards]))
+
+        self.dump();
+
+    # create a human readable version
+    def write_json(self):
+
+        tmp = {}
+        for sources, items in self._items_per_file.items():
+            tmp[sources] = {}
+            for name, item in items.items():
+                item2 = {}
+                for key, val in item.items():
+                    if val==None:
+                        pass
+                    elif type(val) in(str, int, float, None):
+                        item2[key] = val
+                    else:
+                        item2[key] = str(val)
+                del item2['vdb']
+                del item2['adb']
+                loc = '%s:%s' % (item['type'], item['source'])
+                if loc in item['locations']:
+                    del item2['source']
+                    del item2['type']
+                tmp[sources][name] = item2
+
+        with open(self._json_file, 'wt') as file:
+            file.write(json.dumps(tmp, indent=2))
+
+    # write single shard or entire database to file
+    def write_shard(self, path, sources=None):
+
+        if sources!=None and (not sources in self._items_per_file or not self._items_per_file[sources]):
+            return False
+
+        with open(path, 'wb') as file:
+            if sources==None:
+                pickle.dump(self._items_per_file, file)
+            else:
+                pickle.dump(self._items_per_file, file)
+        return True
+
+    # write database
+    def write(self):
+        if self._target==None:
+            return
+
+        if True:
+            num_shards = (1 << 9)
+            shr = 2
+            shard = ((hash(self._sources) >> shr) & (num_shards - 1)) << shr
+            file = path.join(self._dir, '%08x.pickle' % shard)
+            if self.write_shard(file, self._sources):
+                print('writing %s: entries %u locations %u shards %u' % tuple([file] + list(self.llen(self._items_per_file[self._sources])) + list([num_shards])))
+        else:
+            file = path.join(self._dir, 'spgm.pickle')
+            print('writing %s: entries %u locations %u shards 1' % tuple([file] + list(self.llen(self._items))))
+            self.write_shard(file)
+
+        self.write_json()
+
+        self.dump();
+
+    # dump database
+    def dump(self):
+        return;
+        print("---------------------------------------------")
+        for name, item in self._items.items():
+            print(name, item['type'], item['name'], item['locations'])
+        print("---------------------------------------------")
+        for sources, items in self._items_per_file.items():
+            for name, item in items.items():
+                print(sources, name, item['type'], item['name'], item['locations'])
+        print("---------------------------------------------")
+
+    # merge item from current target into all items
+    def merge(self, item):
+        if item['name'] in self._items:
+            locations = self._items[item['name']]['locations']
+            # print(type(locations), locations)
+            locations += item['locations']
+            item['locations'] = list(set(locations))
+            self._items[item['name']] = item
+            return
+        self._items[item['name']] = item
+
+    def llen(self, items):
+        entries = 0
+        locations = 0
+        for name, item in items.items():
+            entries += 1
+            locations += len(item['locations'])
+        return (entries, locations)
+
+    # returns True for items that are statically defined
+    def is_static(self, item):
+        if item['type']==DefinitionType.DEFINE:
+            return True
+        for loc in item['locations']:
+            if loc.startswith('PROGMEM_STRING_DEF:'):
+                return True
+        return False
+
+    def rebuild_items(self):
+        if self._target==None:
+            return
+        old = self.llen(self._items)
+        self._items = {}
+        for sources, items in self._items_per_file.items():
+            for name, item in items.items():
+                self.merge(item)
+        new = self.llen(self._items)
+        print('DEBUG rebuild items (old %u, %u -> new %u, %u)' % tuple(list(old) + list(new)))
+
+    # remove the values from the current target
+    def flush(self):
+        if self._target==None:
+            return
+        if self._sources in self._items_per_file:
+            print('DEBUG removing %u entries in %u locations' % self.llen(self._items_per_file[self._sources]));
+            self._items_per_file[self._sources] = {}
+            self.rebuild_items()
+
+    # add or update an item
+    def add(self, source, name, type, value, auto_value):
+        # print('%s: source=%s name=%s type=%s value=%s auto=%s' % (self._sources, source, name, type, value, auto_value))
+        if not self._sources in self._items_per_file:
+            self._items_per_file[self._sources] = {}
+        items = self._items_per_file[self._sources]
+
+        if name in items:
+            item = items[name]
+            # if item['type']!=type:
+            #     raise RuntimeError('invalid type %s!=%s' % (type, item['type']))
+            if item['name']!=name:
+                raise RuntimeError('invalid name %s!=%s' % (name, item['name']))
+            if item['value']==None:
+                if value!=None:
+                    item['value'] = value
+                    item['vdb'] = False
+            elif value!=None and item['value']!=value:
+                if item['vdb']==False:
+                    raise RuntimeError('invalid value %s!=%s' % (value, item['value']))
+                else:
+                    print("value of %s was modified" % (name))
+                    item['value'] = value
+                    item['vdb'] = False
+            if item['auto']==None:
+                if auto_value!=None:
+                    item['auto'] = auto_value
+                    item['adb'] = False
+            elif auto_value!=None and item['auto']!=auto_value:
+                if item['adb']==False:
+                    raise RuntimeError('invalid value %s!=%s' % (auto_value, item['auto']))
+                else:
+                    print("auto value of %s was modified" % (name))
+                    item['auto'] = auto_value
+                    item['adb'] = False
+            item['locations'].append('%s:%s' % (type, source))
+            item['locations'] = list(set(item['locations']))
+            self.merge(item)
+        else:
+            items[name] = {
+                'source': source,
+                'name': name,
+                'type': type,
+                'value': value,
+                'auto': auto_value,
+                'locations': ['%s:%s' % (type, source)],
+                'vdb': False,
+                'adb': False
+            }
+            self.merge(items[name])
+
+    # add items from preprocessor
+    def add_items(self, items):
+        if self._target==None:
+            return
+        for item in items:
+            self.add(item.source_str, item.name, item.definition_type, item._value, item._auto)
+
+        self.write();
+
+    # write locations
+    def write_locations(self, generator, file: TextIOWrapper, item):
+        if generator.config.locations_one_per_line:
+            file.write('//' + '\n//'.join(item['locations']))
+        else:
+            file.write('// %s\n' % ', '.join(item['locations']))
+
+    def beautify(name):
+        name = name.replace('_', ' ')
+        return name
+
+    # split hex values and trailing hexdigits into separate strings
+    # "\xc2\xb0C\xc2\xb0F\xc2\xb0K" = "\xc2\xb0" "C\xc2\xb0" "F\xc2\xb0K"
+    def split_hex(value):
+        if value.find('\\x')==-1:
+            return value
+        def repl(m):
+            return '%s\" \"%s' % (m.group(1), m.group(2))
+        new_value = re.sub('(\\\\x[0-9a-fA-F]{2})([0-9a-fA-F])', repl, value);
+        # if new_value != value:
+        #     print('"%s" "%s"' % (new_value, value))
+        return new_value
+
+    # write defintion string
+    def write_define(self, generator, file: TextIOWrapper, item):
+        lang = 'default'
+        if item['value']!=None:
+            value = item['value']
+        elif item['auto']!=None:
+            value = item['auto']
+            lang += ' (auto)'
+        else:
+            value = Database.beautify(item['name'])
+            lang += ' (auto)'
+
+        self.write_locations(generator, file, item)
+        file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item['name'], Database.split_hex(value), lang))
+
+    def create_output_header(self, generator, filename, extra_includes=None):
+        if extra_includes and isinstance(extra_includes, str):
+            extra_includes = [extra_includes]
+
+        try:
+            with open(filename, 'wt') as file:
+                generator.write_header_comment(file)
+                generator.write_header_start(file, extra_includes)
+                for item in self._items.values():
+                    if not self.is_static(item):
+                        self.write_locations(generator, file, item)
+                        file.write('PROGMEM_STRING_DECL(%s);\n' % (item['name']))
+                file.writelines([
+                    '#ifdef __cplusplus\n',
+                    '} // extern "C"\n',
+                    '#endif\n'
+                ])
+        except OSError as e:
+            raise RuntimeError("cannot create %s: %s" % (filename, e))
+
+    def create_output_define(self, generator, filename):
+        count = 0
+        try:
+            with open(filename, 'wt') as file:
+                generator.write_header_comment(file)
+                file.write('#include "spgm_auto_strings.h"\n')
+                for item in self._items.values():
+                    if not self.is_static(item):
+                        self.write_define(generator, file, item)
+                        count += 1
+        except OSError as e:
+            raise RuntimeError("cannot create %s: %s" % (filename, e))
+        return count
+
+    def create_output_static(self, generator, filename):
+        try:
+            with open(filename, 'wt') as file:
+                generator.write_header_comment(file)
+                for item in self._items.values():
+                    if self.is_static(item):
+                        self.write_define(generator, file, item)
+        except OSError as e:
+            raise RuntimeError("cannot create %s: %s" % (filename, e))
+
+
 
 class Generator(object):
 
-    def __init__(self, config: SpgmConfig, files: List[FS.File]):
+    def __init__(self, config: SpgmConfig, files: List[FS.File], target=None):
         self._config = config
         self._files = files
         self._items = [] # type: List[Item]
@@ -55,6 +386,14 @@ class Generator(object):
         self._database_items = {} # type: Dict[str, Item]
         self._files_items = {} # type: Dict[str, Dict[FileLocation, Item]]
         self._build_items = {} # Dict[str, Dict[FileLocation, Item]]
+
+        self._database = Database(config.json_build_database_dir, target)
+        self._database.read();
+
+    # add items from preprocessor
+    # gen.copy_to_database(fcpp.items)
+    def copy_to_database(self, items):
+        self._database.add_items(items)
 
     @property
     def config(self):
@@ -189,6 +528,10 @@ class Generator(object):
             file.write(self._build._tojson())
 
 
+    def clear(self):
+        pass
+
+
     def write_header_comment(self, file: TextIOWrapper):
         file.write("// AUTO GENERATED FILE - DO NOT MODIFY\n")
 
@@ -216,9 +559,11 @@ class Generator(object):
     def write_define(self, file: TextIOWrapper, item: Item):
         p_lang, lang, value = item.get_value(self._language)
         self.write_locations(file, item)
-        file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, value, lang))
+        file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, Database.split_hex(value), lang))
 
     def create_output_header(self, filename, extra_includes=None):
+        return self._database.create_output_header(self, filename, extra_includes)
+
         if extra_includes and isinstance(extra_includes, str):
             extra_includes = [extra_includes]
 
@@ -240,6 +585,7 @@ class Generator(object):
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
     def create_output_define(self, filename):
+        return self._database.create_output_define(self, filename)
         count = 0
         try:
             with open(filename, 'wt') as file:
@@ -255,6 +601,7 @@ class Generator(object):
         return count
 
     def create_output_static(self, filename):
+        return self._database.create_output_static(self, filename)
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
@@ -274,44 +621,6 @@ class Generator(object):
         except OSError as e:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
-    # def write(self, filename, type, include_file=None):
-    #     num = 0
-    #     try:
-    #         with open(filename, 'wt') as file:
-    #             self.write_header_comment(file)
-
-    #             if type=='header':
-    #                 self.write_header_start(file, [include_file])
-    #             elif type=='define':
-    #                 file.write('#include "FlashStringGeneratorAuto.h"\n')
-
-    #             for item in self._merged.values():
-    #                 if type=='static' and not item.static:
-    #                     continue
-    #                 if item.type==ItemType.FROM_SOURCE:
-    #                     p_lang, lang, value = item.get_value(self._language)
-    #                     if item.has_locations:
-    #                         if self.config.locations_one_per_line:
-    #                             file.write(item.get_locations_str(sep='', fmt='// %s\n'))
-    #                         else:
-    #                             file.write('// %s\n' % item.locations_str)
-    #                     num = num + 1
-    #                     if type=='header':
-    #                         file.write('PROGMEM_STRING_DECL(%s);\n' % (item.name))
-    #                     else:
-    #                         file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, value, lang))
-    #                 # else:
-    #                 #     print('skipped %s' % item)
-
-    #             if type=="header":
-    #                 file.writelines([
-    #                     '#ifdef __cplusplus\n',
-    #                     '} // extern "C"\n',
-    #                     '#endif\n'
-    #                 ])
-    #     except OSError as e:
-    #         raise RuntimeError("cannot create %s: %s" % (filename, e))
-    #     return num
 
     def find_items_by_name(self, item1: Item, types=(ItemType.FROM_SOURCE,), compare=None) -> Iterable[Item]:
         return (item2 for item2 in self.items if item1.is_type(item2, types) and (item1.name==item2.name) and (compare==None or compare(item1, item2)))
@@ -340,11 +649,15 @@ class Generator(object):
                     print('merge create %s' % item1)
                 self._merged[item1.name] = item1
 
-            # merge all other items into merged list
-            for item2 in self.find_items_by_name(item1, merge_types):
+            for item2 in (item for item in self.items if item.type in merge_types):
+                if id(item1)==id(item2) or item1.name!=item2.name:
+                    continue
+            # # merge all other items into merged list
+            # for item2 in self.find_items_by_name(item1, merge_types):
                 # print notice if an item is defined multiple times
-                if item1.type!=ItemType.FROM_CONFIG and item2.type!=ItemType.FROM_CONFIG and item1.has_value and item2.has_value and item1.value==item2.value:
-                    print('NOTICE: redefinition of %s="%s" in %s:%u first definition in %s:%u' % (item1.name, item2.name, item1.source, item1.lineno, item2.source, item2.lineno), file=sys.stderr)
+
+                # if item1.type!=ItemType.FROM_CONFIG and item2.type!=ItemType.FROM_CONFIG and item1.has_value and item2.has_value and item1.value==item2.value and item1.source_hash!=item2.source_hash:
+                #     print('NOTICE: redefinition of %s="%s" in %s:%u first definition in %s:%u' % (item1.name, item2.name, item1.source, item1.lineno, item2.source, item2.lineno), file=sys.stderr)
 
                 if DebugType.DUMP_MERGE_ITEMS in Item.DEBUG:
                     print('merge merge %s into %s' % (item2, item1))
@@ -364,16 +677,12 @@ class Generator(object):
         self._compare_values()
         self._compare_i18n()
 
-        # merge items from source first and override everything from the config file
-        self._merge_items()
-        self._dump_merged('_merge_items') # debug
+        self._merge_items(types=(ItemType.FROM_SOURCE,), merge_types=(ItemType.FROM_SOURCE,))
 
-        # merge items from config
+        self._merge_items(types=(ItemType.FROM_CONFIG,), merge_types=(ItemType.FROM_BUILD_DATABASE,))
+
         self._merge_items(types=(ItemType.FROM_SOURCE,), merge_types=(ItemType.FROM_CONFIG,))
-        self._dump_merged('after _merge_items_from_config') # debug
 
-        self._merge_items(types=(ItemType.FROM_CONFIG,), merge_types=(ItemType.FROM_SOURCE,))
-        self._dump_merged('after _merge_items_to_config') # debug
 
     def _dump(self, name):
         if DebugType.DUMP_ITEMS in Item.DEBUG:

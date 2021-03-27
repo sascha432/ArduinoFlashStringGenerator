@@ -21,6 +21,9 @@ import threading
 import generator
 from typing import List
 from pathlib import Path
+import pickle
+import json
+import struct
 import enum
 import time
 import click
@@ -111,7 +114,7 @@ class SpgmExtraScript(object):
         config = SpgmConfig(env)
 
         if self.log_file==None:
-            SpgmConfig.debug('creating log file %s' %config.log_file, True)
+            SpgmConfig.debug('creating log file %s' % config.log_file, True)
             self.log_file = open(config.log_file, 'at')
 
             self.log_file.write('--- source files:\n')
@@ -131,7 +134,7 @@ class SpgmExtraScript(object):
             return
 
         SpgmConfig.verbose('waiting for lock...')
-        if not self.lock.acquire(True, 900.0):
+        if not self.lock.acquire(True, 60.0):
             raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
         try:
             SpgmConfig.verbose('lock acquired...')
@@ -141,7 +144,8 @@ class SpgmExtraScript(object):
             # else:
             if True:
                 SpgmConfig.debug('creating generator object', True)
-                gen = Generator(config, files)
+                gen = Generator(config, files, target)
+                gen._database.flush()
                 gen.language = config.output_language
                 gen.read_json_database(config.json_database, config.json_build_database)
                 # config.set_cache('generator', gen)
@@ -178,22 +182,41 @@ class SpgmExtraScript(object):
 
                 config.set_cache('fcpp', fcpp)
 
+            def get_hash(files):
+                hash_files = []
+                for file in files:
+                    rfile = path.realpath(file)
+                    st = os.stat(rfile)
+                    hash_files.append({rfile: '%u,%u' % (st.st_size, st.st_mtime)});
+                hash_files.sort(reverse=False, key=lambda e: list(e)[0])
+                return hash(json.dumps(hash_files))
+
             SpgmConfig.debug('files', True)
             parts = []
             for file in gen.files:
                 SpgmConfig.debug('file %s' % file)
                 parts.append('#include "%s"' % file)
 
+            p_hash = get_hash(gen.files)
+
             self.log_file.write('--- preprocessing files:\n')
             for file in gen.files:
                 self.log_file.write('%s\n' % file)
 
+            SpgmConfig.verbose('preprocess')
             SpgmConfig.debug('preprocessing files', True)
             # parse files
             fcpp.parse('\n'.join(parts))
             fcpp.find_strings()
 
             SpgmConfig.debug('creating output files', True)
+
+            SpgmConfig.verbose('merge')
+            gen.merge_items(fcpp.items)
+
+
+
+            gen.copy_to_database(fcpp.items)
             gen.merge_items(fcpp.items)
 
             num = len(fcpp.items)
@@ -213,12 +236,18 @@ class SpgmExtraScript(object):
             SpgmConfig.debug('json_build_database %s' % config.json_build_database)
 
             # create output files
+
             gen.create_output_header(config.declaration_file, config.declaration_include_file)
             gen.create_output_define(config.definition_file)
+
             # generator.create_output_static(args.output_static)
             # generator.create_output_auto(args.output_auto)
 
+            # for item in gen.items:
+            #     print(item);
+
             # write config file and database
+
             gen.write_json_database(config.json_database, config.json_build_database)
 
             SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
@@ -258,7 +287,7 @@ class SpgmExtraScript(object):
     # export items from JSON database
     #
     def export_database(self, config, type: ExportType):
-        gen = Generator(config, [])
+        gen = Generator(config, [], None)
         gen.language = config.output_language
         gen.read_json_database(config.json_database, config.json_build_database)
 

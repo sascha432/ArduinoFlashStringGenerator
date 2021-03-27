@@ -8,7 +8,7 @@ import os
 import re
 from typing import List
 # from typing import List, Tuple, Union
-# from .config import SpgmConfig
+from .config import SpgmConfig
 from .types import DefinitionType, DebugType, ItemType
 from .location import SourceLocation
 from .i18n import i18n_config, i18n_lang, i18n
@@ -219,9 +219,6 @@ class Item(SourceLocation):
         if self._value!=None and self._auto!=None:
             raise RuntimeError('auto and value set: %s' % self)
 
-        # print("result %s" % self)
-
-
     def _merge_value(self, item):
         if item._value!=None and item._auto!=None:
             raise RuntimeError('auto and value set: %s' % item)
@@ -275,6 +272,10 @@ class Item(SourceLocation):
 
     @property
     def is_from_source(self):
+        if self.static:
+            return False
+        if SpgmConfig.add_unused:
+            return True
         counter = self.use_counter
         if counter==0:
             return False

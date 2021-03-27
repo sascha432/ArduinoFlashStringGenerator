@@ -102,6 +102,14 @@ class SourceLocation(object):
         self._lineno = lineno
 
     @property
+    def source_hash(self):
+        return hash(self.source_str)
+
+    @property
+    def source_str(self):
+        return '%s:%d' % (self._source, self.lineno)
+
+    @property
     def type(self):
         if isinstance(self._lineno, int):
             return ItemType.FROM_SOURCE
