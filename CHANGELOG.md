@@ -2,6 +2,7 @@
 
 ## 0.1.1 (work-in-progress)
 
+- New database format to run multiple processes in parallel (work in progress; since python just uses one core, the preprocessor threads need to be spawned externally)
 - PlatformIO 5.0 support
 - Cache for configuration
 - Fixed exporting static defintion

@@ -10,6 +10,16 @@ class ExportType(enum.Enum):
     CONFIG = 3,
     ALL = 4
 
+class CompressionType(enum.Enum):
+    NONE = None
+    LZMA = 'lzma'
+
+    def fromString(value: str):
+        value = value.lower()
+        if value in ('false', '0', 'null', 'none', 'off', 'no', 'disable', 'disabled'):
+            return CompressionType.NONE
+        return CompressionType(value)
+
 class SubstListType(enum.Enum):
     STR = 'str'
     ABSPATH = 'abspath'

@@ -3,7 +3,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from .types import ExportType, SubstListType, SplitSepType, ItemType, DefinitionType, DebugType
+from .types import ExportType, SubstListType, SplitSepType, ItemType, DefinitionType, DebugType, CompressionType
 from .cache import SpgmCache
 from .config import SpgmConfig
 from .generator import Generator

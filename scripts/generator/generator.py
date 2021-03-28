@@ -12,22 +12,92 @@ from SCons.Node import FS
 import sys
 import os
 import json
-import copy
-import typing
+import threading
+import time
 import glob
+import lzma
 import re
-import struct
 import pickle
 from os import path
-from .types import ItemType, DebugType, DefinitionType
+from .types import CompressionType, ItemType, DebugType, DefinitionType
 from .item import Item
 from .config import SpgmConfig
-import enum
 import generator
 from .build_database import BuildDatabase
-from typing import List, Dict, Iterable, Union, ValuesView
+from typing import List, Dict, Iterable, Any
+import builtins
 
 setattr(generator, 'get_spgm_extra_script', lambda: generator.spgm_extra_script)
+
+# implements FileWrapper().name and FileWrapper.mode if the underlying object does not support these properties
+class FileWrapper(object):
+    def __init__(self, file, filename, mode, is_open=True):
+        self._file = file
+        self._filename = filename
+        self._mode = mode
+        self._is_open = is_open
+
+    def open(filename, mode):
+        if filename.lower().endswith('.xz'):
+            file_class = 'lzma'
+        else:
+            file_class = 'builtins'
+        return FileWrapper(object.__call__(file_class, 'open', filename, mode), filename, mode, True)
+
+        # if 'w' in mode:
+
+        #         file = lzma.open(filename, mode)
+        #         uncompressed = filename.replace('.xz', '')
+        #         if uncompressed!=path and path.isfile(uncompressed):
+        #             print("WARNING uncompressed file %s found" % uncompressed)
+        #     else:
+        #         file = builtins.open(filename, mode)
+        #         compressed = filename + '.xz'
+        #         if filename!=compressed and path.isfile(compressed):
+        #             print("WARNING compressed file %s found" % compressed)
+        # elif 'r' in mode:
+        #     if filename.endswith('.xz'):
+        #         file = lzma.open(filename, mode)
+        #     else:
+        #         file = open(filename, mode)
+        # else:
+        #     raise RuntimeError('invalid open mode=%s' % mode)
+        # return FileWrapper(file, filename, mode)
+
+    @property
+    def name(self):
+        return object.__getattribute__(self, 'name')
+
+    @property
+    def mode(self):
+        return object.__getattribute__(self, 'mode')
+
+    @property
+    def closed(self):
+        return object.__getattribute__(self, 'closed')
+
+    def close(self):
+        file = object.__getattribute__(self, '_file')
+        self._is_open = False
+        file.close()
+
+    def __getattribute__(name):
+        return object.__getattribute__(FileWrapper, name)
+
+    def __getattribute__(self, name):
+        if name=='close':
+            return object.__getattribute__(self, 'close')
+        file = object.__getattribute__(self, '_file')
+        if hasattr(file, name):
+            return getattr(file, name)
+        if name=='name':
+            return object.__getattribute__(self, '_filename')
+        if name=='mode':
+            return object.__getattribute__(self, '_mode')
+        if name=='closed':
+            return not object.__getattribute__(self, '_is_open')
+        # raise exception
+        return object.__getattribute__(file, name)
 
 class FileLocation(object):
     def __init__(self, source, line, type):
@@ -48,13 +118,16 @@ class ValueObject(object):
         return self._value;
 
 class Database(object):
-    def __init__(self, dir, target):
-        os.makedirs(dir, exist_ok=True)
-        self._dir = path.abspath(dir);
-        self._json_file = path.join(dir, '_spgm.json');
+    def __init__(self, generator, target):
+        self._generator = generator
+        self._dir = path.abspath(self.config.build_database_dir);
+        self._json_file = path.join(self._dir, '_spgm.json');
+        self._lock = threading.Lock()
         self._items = {}
         self._items_per_file = {}
         self._target = target;
+        self._sources = None
+        self._sources_hash = None
         if target!=None:
             sources = []
             for n in self._target:
@@ -63,54 +136,20 @@ class Database(object):
             self._sources = ','.join(sources)
             self._sources_hash = hash(self._sources)
 
+    @property
+    def config(self):
+        return self._generator.config
 
-    def read_shard(self, path):
-        with open(path, 'rb') as file:
-            items = pickle.load(file)
-        for sources, items in items.items():
-            self._items_per_file[sources] = items
-            for item in self._items_per_file[sources].values():
-                item['vdb'] = True
-                item['adb'] = True
-                self.merge(item)
-
-    # read database
-    def read(self):
-
-        # TODO add locking
-        # TODO add modification time and size to detectg changes
-
-        self._items = {}
-        self._items_per_file = {}
-        if self._target==None:
-            return
-
-        dir = path.join(self._dir, '*.pickle')
-        files = glob.glob(dir);
-        if not files:
-            return
-
-        shards = len(files)
-        for file in files:
-            self.read_shard(file)
-
-        # with open(self._file, 'rb') as file:
-        #     self._items_per_file = pickle.load(file)
-
-        # for sources, items in self._items_per_file.items():
-        #     # print('sources %s items %s' % (sources,items))
-        #     for name, item in items.items():
-        #         # print('name=%s item=%s' %( name,item))
-        #         item['vdb'] = True
-        #         item['adb'] = True
-        #         self.merge(item)
-
-        print('read %s: %u entries %u locations %u shards' % tuple([dir] + list(self.llen(self._items)) + [shards]))
-
-        self.dump();
+    @property
+    def source_idx(self):
+        return self._sources_hash
 
     # create a human readable version
     def write_json(self):
+
+        start = time.monotonic()
+
+        os.makedirs(self._dir, exist_ok=True)
 
         tmp = {}
         for sources, items in self._items_per_file.items():
@@ -135,37 +174,139 @@ class Database(object):
         with open(self._json_file, 'wt') as file:
             file.write(json.dumps(tmp, indent=2))
 
-    # write single shard or entire database to file
-    def write_shard(self, path, sources=None):
+        dur = time.monotonic() - start
+        print('DEBUG written to %s: time %.3fms' % (self._json_file, dur * 1000))
 
-        if sources!=None and (not sources in self._items_per_file or not self._items_per_file[sources]):
-            return False
-
-        with open(path, 'wb') as file:
-            if sources==None:
-                pickle.dump(self._items_per_file, file)
+    def open(self, filename, mode):
+        if 'w' in mode:
+            if self.config.build_database_compression == CompressionType.LZMA:
+                file = lzma.open(filename, mode)
+                uncompressed = filename.replace('.xz', '')
+                if uncompressed!=path and path.isfile(uncompressed):
+                    print("WARNING uncompressed file %s found" % uncompressed)
             else:
-                pickle.dump(self._items_per_file, file)
-        return True
+                file = open(filename, mode)
+                compressed = filename + '.xz'
+                if filename!=compressed and path.isfile(compressed):
+                    print("WARNING compressed file %s found" % compressed)
+        elif 'r' in mode:
+            if filename.endswith('.xz'):
+                file = lzma.open(filename, mode)
+            else:
+                file = open(filename, mode)
+        else:
+            raise RuntimeError('invalid open mode=%s' % mode)
+        return FileWrapper(file, filename, mode)
+
+    # read shard
+    def read_shard(self, filename, return_result=False):
+        if not path.isfile(filename) and return_result:
+            return {}
+
+        file = self.open(filename, 'rb')
+        try:
+            items = pickle.load(file)
+            if return_result:
+                return items
+        finally:
+            file.close()
+        for source_idx, items in items.items():
+            self._items_per_file[source_idx] = items
+            for item in items.values():
+                item['vdb'] = True
+                item['adb'] = True
+                self.merge(item)
+
+    # read database
+    def read(self):
+
+        start = time.monotonic()
+
+        if not self._lock.acquire(True, 60.0):
+            time.sleep(5)
+            if not self._lock.acquire(True, 60.0):
+                raise RuntimeError('Failed to acquire database lock')
+        try:
+
+            self._items = {}
+            self._items_per_file = {}
+            if self._target==None:
+                return
+
+            dir = path.join(self._dir, '*.pickle*')
+            files = glob.glob(dir);
+            if not files:
+                return
+
+            shards = len(files)
+            for file in files:
+                self.read_shard(file)
+
+            print('DEBUG read from %s: %u entries %u locations %u shards' % tuple([dir] + list(self.llen(self._items)) + [shards]))
+        finally:
+            self._lock.release();
+
+        self.dump();
+
+    # write single shard or entire database to file
+    def write_shard(self, path, source_idx=None):
+
+        if source_idx!=None and (not source_idx in self._items_per_file or not self._items_per_file[source_idx]):
+            return None
+
+        compressed_file = path + '.xz'
+        if self.config.build_database_compression == CompressionType.LZMA:
+            filename = compressed_file
+        else:
+            filename = path
+
+        # get a fresh copy from disk while the database is locked
+        items = self.read_shard(filename, True)
+        # replace the current target
+        items[source_idx] = self._items_per_file[source_idx]
+
+        file = self.open(filename, 'wb')
+        try:
+            print("DEBUG %s %s" % (file.name, file.mode))
+            pickle.dump(items, file)
+        finally:
+            file.close()
+
+        return [filename] + list(self.llen(items[source_idx]))
 
     # write database
     def write(self):
         if self._target==None:
             return
 
-        if True:
-            num_shards = (1 << 9)
-            shr = 2
-            shard = ((hash(self._sources) >> shr) & (num_shards - 1)) << shr
-            file = path.join(self._dir, '%08x.pickle' % shard)
-            if self.write_shard(file, self._sources):
-                print('writing %s: entries %u locations %u shards %u' % tuple([file] + list(self.llen(self._items_per_file[self._sources])) + list([num_shards])))
-        else:
-            file = path.join(self._dir, 'spgm.pickle')
-            print('writing %s: entries %u locations %u shards 1' % tuple([file] + list(self.llen(self._items))))
-            self.write_shard(file)
+        start = time.monotonic()
 
-        self.write_json()
+        if not self._lock.acquire(True, 60.0):
+            time.sleep(5)
+            if not self._lock.acquire(True, 60.0):
+                raise RuntimeError('Failed to acquire database lock')
+        try:
+
+            os.makedirs(self._dir, exist_ok=True)
+
+            num_shards = self.config.build_database_num_shards
+            if num_shards>1:
+                shard = self.source_idx % num_shards
+                file = path.join(self._dir, '%04x%04x.pickle' % (num_shards, shard))
+                result = self.write_shard(file, self.source_idx)
+            else:
+                file = path.join(self._dir, 'spgm.pickle')
+                shard = 0
+                result = self.write_shard(file)
+
+            if result:
+                dur = time.monotonic() - start
+                print('DEBUG written to %s: entries=%u locations=%u shard=%u/%u time=%.3fms' % (*result, shard + 1, num_shards, dur * 1000))
+
+            self.write_json()
+
+        finally:
+            self._lock.release()
 
         self.dump();
 
@@ -176,9 +317,9 @@ class Database(object):
         for name, item in self._items.items():
             print(name, item['type'], item['name'], item['locations'])
         print("---------------------------------------------")
-        for sources, items in self._items_per_file.items():
+        for source_idx, items in self._items_per_file.items():
             for name, item in items.items():
-                print(sources, name, item['type'], item['name'], item['locations'])
+                print(source_idx, name, item['type'], item['name'], item['locations'])
         print("---------------------------------------------")
 
     # merge item from current target into all items
@@ -214,8 +355,8 @@ class Database(object):
             return
         old = self.llen(self._items)
         self._items = {}
-        for sources, items in self._items_per_file.items():
-            for name, item in items.items():
+        for items in self._items_per_file.values():
+            for item in items.values():
                 self.merge(item)
         new = self.llen(self._items)
         print('DEBUG rebuild items (old %u, %u -> new %u, %u)' % tuple(list(old) + list(new)))
@@ -224,17 +365,17 @@ class Database(object):
     def flush(self):
         if self._target==None:
             return
-        if self._sources in self._items_per_file:
-            print('DEBUG removing %u entries in %u locations' % self.llen(self._items_per_file[self._sources]));
-            self._items_per_file[self._sources] = {}
+        if self.source_idx in self._items_per_file:
+            print('DEBUG removing %u entries in %u locations' % self.llen(self._items_per_file[self.source_idx]));
+            self._items_per_file[self.source_idx] = {}
             self.rebuild_items()
 
     # add or update an item
     def add(self, source, name, type, value, auto_value):
-        # print('%s: source=%s name=%s type=%s value=%s auto=%s' % (self._sources, source, name, type, value, auto_value))
-        if not self._sources in self._items_per_file:
-            self._items_per_file[self._sources] = {}
-        items = self._items_per_file[self._sources]
+        # print('%s: source=%s name=%s type=%s value=%s auto=%s' % (self.source_idx, source, name, type, value, auto_value))
+        if not self.source_idx in self._items_per_file:
+            self._items_per_file[self.source_idx] = {}
+        items = self._items_per_file[self.source_idx]
 
         if name in items:
             item = items[name]
@@ -290,8 +431,8 @@ class Database(object):
         self.write();
 
     # write locations
-    def write_locations(self, generator, file: TextIOWrapper, item):
-        if generator.config.locations_one_per_line:
+    def write_locations(self, file: TextIOWrapper, item):
+        if self.config.locations_one_per_line:
             file.write('//' + '\n//'.join(item['locations']))
         else:
             file.write('// %s\n' % ', '.join(item['locations']))
@@ -313,7 +454,7 @@ class Database(object):
         return new_value
 
     # write defintion string
-    def write_define(self, generator, file: TextIOWrapper, item):
+    def write_define(self, file: TextIOWrapper, item):
         lang = 'default'
         if item['value']!=None:
             value = item['value']
@@ -324,20 +465,20 @@ class Database(object):
             value = Database.beautify(item['name'])
             lang += ' (auto)'
 
-        self.write_locations(generator, file, item)
+        self.write_locations(file, item)
         file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item['name'], Database.split_hex(value), lang))
 
-    def create_output_header(self, generator, filename, extra_includes=None):
+    def create_output_header(self, filename, extra_includes=None):
         if extra_includes and isinstance(extra_includes, str):
             extra_includes = [extra_includes]
 
         try:
             with open(filename, 'wt') as file:
-                generator.write_header_comment(file)
-                generator.write_header_start(file, extra_includes)
+                self._generator.write_header_comment(file)
+                self._generator.write_header_start(file, extra_includes)
                 for item in self._items.values():
                     if not self.is_static(item):
-                        self.write_locations(generator, file, item)
+                        self.write_locations(file, item)
                         file.write('PROGMEM_STRING_DECL(%s);\n' % (item['name']))
                 file.writelines([
                     '#ifdef __cplusplus\n',
@@ -347,27 +488,27 @@ class Database(object):
         except OSError as e:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
-    def create_output_define(self, generator, filename):
+    def create_output_define(self, filename):
         count = 0
         try:
             with open(filename, 'wt') as file:
-                generator.write_header_comment(file)
+                self._generator.write_header_comment(file)
                 file.write('#include "spgm_auto_strings.h"\n')
                 for item in self._items.values():
                     if not self.is_static(item):
-                        self.write_define(generator, file, item)
+                        self.write_define(file, item)
                         count += 1
         except OSError as e:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
         return count
 
-    def create_output_static(self, generator, filename):
+    def create_output_static(self, filename):
         try:
             with open(filename, 'wt') as file:
-                generator.write_header_comment(file)
+                self._generator.write_header_comment(file)
                 for item in self._items.values():
                     if self.is_static(item):
-                        self.write_define(generator, file, item)
+                        self.write_define(file, item)
         except OSError as e:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
@@ -387,7 +528,7 @@ class Generator(object):
         self._files_items = {} # type: Dict[str, Dict[FileLocation, Item]]
         self._build_items = {} # Dict[str, Dict[FileLocation, Item]]
 
-        self._database = Database(config.json_build_database_dir, target)
+        self._database = Database(self, target)
         self._database.read();
 
     # add items from preprocessor
@@ -562,7 +703,7 @@ class Generator(object):
         file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, Database.split_hex(value), lang))
 
     def create_output_header(self, filename, extra_includes=None):
-        return self._database.create_output_header(self, filename, extra_includes)
+        return self._database.create_output_header(filename, extra_includes)
 
         if extra_includes and isinstance(extra_includes, str):
             extra_includes = [extra_includes]
@@ -585,7 +726,7 @@ class Generator(object):
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
     def create_output_define(self, filename):
-        return self._database.create_output_define(self, filename)
+        return self._database.create_output_define(filename)
         count = 0
         try:
             with open(filename, 'wt') as file:
@@ -601,7 +742,7 @@ class Generator(object):
         return count
 
     def create_output_static(self, filename):
-        return self._database.create_output_static(self, filename)
+        return self._database.create_output_static(filename)
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)

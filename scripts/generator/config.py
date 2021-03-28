@@ -2,7 +2,7 @@
 # Author: sascha_lammers@gmx.de
 #
 
-from .types import SubstListType, SplitSepType
+from .types import SubstListType, SplitSepType, CompressionType
 from .cache import SpgmCache
 from os import path
 from typing import List, Tuple
@@ -10,6 +10,7 @@ import fnmatch
 import enum
 import re
 import click
+import lzma
 
 class SpgmConfig(SpgmCache):
 
@@ -161,6 +162,14 @@ class SpgmConfig(SpgmCache):
         return self.cache('add_unused', lambda: self._get_bool('add_unused', False))
 
     @property
+    def build_database_num_shards(self):
+        return self.cache('build_database_num_shards', lambda: max(1, min(0xffff, int(self._get_string('build_database_num_shards', '32')))))
+
+    @property
+    def build_database_compression(self):
+        return self.cache('build_database_compression', lambda: CompressionType.fromString(self._get_string('build_database_compression', 'lzma')))
+
+    @property
     def output_language(self):
         return self.cache('output_language', lambda: self._subst_list(self._get_string('output_language', 'default'), SplitSepType.WHITESPACE))
 
@@ -193,8 +202,8 @@ class SpgmConfig(SpgmCache):
         return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
 
     @property
-    def json_build_database_dir(self):
-        return self.cache('json_build_database_dir', lambda: self._get_path('json_build_database_dir', '$BUILD_DIR/spgm'))
+    def build_database_dir(self):
+        return self.cache('build_database_dir', lambda: self._get_path('build_database_dir', '$BUILD_DIR/spgm'))
 
     @property
     def json_build_database(self):
