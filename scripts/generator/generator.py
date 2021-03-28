@@ -15,7 +15,6 @@ import json
 import threading
 import time
 import glob
-import lzma
 import re
 import pickle
 from os import path
@@ -25,11 +24,10 @@ from .config import SpgmConfig
 import generator
 from .build_database import BuildDatabase
 from typing import List, Dict, Iterable, Any
-import builtins
 
 setattr(generator, 'get_spgm_extra_script', lambda: generator.spgm_extra_script)
 
-# implements FileWrapper().name and FileWrapper.mode if the underlying object does not support these properties
+# detect compression format by file extension
 class FileWrapper(object):
     def __init__(self, file, filename, mode, is_open=True):
         self._file = file
@@ -39,30 +37,11 @@ class FileWrapper(object):
 
     def open(filename, mode):
         if filename.lower().endswith('.xz'):
-            file_class = 'lzma'
+            module = 'lzma'
         else:
-            file_class = 'builtins'
-        return FileWrapper(object.__call__(file_class, 'open', filename, mode), filename, mode, True)
-
-        # if 'w' in mode:
-
-        #         file = lzma.open(filename, mode)
-        #         uncompressed = filename.replace('.xz', '')
-        #         if uncompressed!=path and path.isfile(uncompressed):
-        #             print("WARNING uncompressed file %s found" % uncompressed)
-        #     else:
-        #         file = builtins.open(filename, mode)
-        #         compressed = filename + '.xz'
-        #         if filename!=compressed and path.isfile(compressed):
-        #             print("WARNING compressed file %s found" % compressed)
-        # elif 'r' in mode:
-        #     if filename.endswith('.xz'):
-        #         file = lzma.open(filename, mode)
-        #     else:
-        #         file = open(filename, mode)
-        # else:
-        #     raise RuntimeError('invalid open mode=%s' % mode)
-        # return FileWrapper(file, filename, mode)
+            module = 'builtins'
+        module = __import__(module)
+        return FileWrapper(getattr(module, 'open')(filename, mode), filename, mode, True)
 
     @property
     def name(self):
@@ -121,8 +100,9 @@ class Database(object):
     def __init__(self, generator, target):
         self._generator = generator
         self._dir = path.abspath(self.config.build_database_dir);
-        self._json_file = path.join(self._dir, '_spgm.json');
+        self._json_file = path.join(self._dir, '_debug.json');
         self._lock = threading.Lock()
+        self._defined = {}
         self._items = {}
         self._items_per_file = {}
         self._target = target;
@@ -166,10 +146,14 @@ class Database(object):
                 del item2['vdb']
                 del item2['adb']
                 loc = '%s:%s' % (item['type'], item['source'])
-                if loc in item['locations']:
-                    del item2['source']
-                    del item2['type']
+                # if loc in item['locations']:
+                #     del item2['source']
+                #     del item2['type']
                 tmp[sources][name] = item2
+        tmp['defined'] = {}
+        if self._defined:
+            for name, item in self._defined.items():
+                tmp['defined'][name] = {'name': name, 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'auto': item['auto']}
 
         with open(self._json_file, 'wt') as file:
             file.write(json.dumps(tmp, indent=2))
@@ -177,33 +161,12 @@ class Database(object):
         dur = time.monotonic() - start
         print('DEBUG written to %s: time %.3fms' % (self._json_file, dur * 1000))
 
-    def open(self, filename, mode):
-        if 'w' in mode:
-            if self.config.build_database_compression == CompressionType.LZMA:
-                file = lzma.open(filename, mode)
-                uncompressed = filename.replace('.xz', '')
-                if uncompressed!=path and path.isfile(uncompressed):
-                    print("WARNING uncompressed file %s found" % uncompressed)
-            else:
-                file = open(filename, mode)
-                compressed = filename + '.xz'
-                if filename!=compressed and path.isfile(compressed):
-                    print("WARNING compressed file %s found" % compressed)
-        elif 'r' in mode:
-            if filename.endswith('.xz'):
-                file = lzma.open(filename, mode)
-            else:
-                file = open(filename, mode)
-        else:
-            raise RuntimeError('invalid open mode=%s' % mode)
-        return FileWrapper(file, filename, mode)
-
-    # read shard
+    # read shard or raw file with return_result=True
     def read_shard(self, filename, return_result=False):
         if not path.isfile(filename) and return_result:
             return {}
 
-        file = self.open(filename, 'rb')
+        file = FileWrapper.open(filename, 'rb')
         try:
             items = pickle.load(file)
             if return_result:
@@ -217,6 +180,16 @@ class Database(object):
                 item['adb'] = True
                 self.merge(item)
 
+    def merge_defined(self, defined):
+        print("MERGE %u" % len(defined))
+        if defined:
+            old = len(self._defined)
+            self._defined.update(defined)
+            for item in self._defined.values():
+                self.merge(item)
+            print("DEBUG: defined changed from %u to %u" % (old, len(self._defined)))
+
+
     # read database
     def read(self):
 
@@ -228,6 +201,7 @@ class Database(object):
                 raise RuntimeError('Failed to acquire database lock')
         try:
 
+            self._defined = {}
             self._items = {}
             self._items_per_file = {}
             if self._target==None:
@@ -238,9 +212,15 @@ class Database(object):
             if not files:
                 return
 
+            defined = None
             shards = len(files)
             for file in files:
-                self.read_shard(file)
+                if 'defines.pickle' in file:
+                    defined = self.read_shard(file, True)
+                else:
+                    self.read_shard(file)
+
+            self.merge_defined(defined)
 
             print('DEBUG read from %s: %u entries %u locations %u shards' % tuple([dir] + list(self.llen(self._items)) + [shards]))
         finally:
@@ -249,9 +229,9 @@ class Database(object):
         self.dump();
 
     # write single shard or entire database to file
-    def write_shard(self, path, source_idx=None):
+    def write_shard(self, path, source_idx=None, defines=False):
 
-        if source_idx!=None and (not source_idx in self._items_per_file or not self._items_per_file[source_idx]):
+        if defines==False and source_idx!=None and (not source_idx in self._items_per_file or not self._items_per_file[source_idx]):
             return None
 
         compressed_file = path + '.xz'
@@ -262,15 +242,21 @@ class Database(object):
 
         # get a fresh copy from disk while the database is locked
         items = self.read_shard(filename, True)
-        # replace the current target
-        items[source_idx] = self._items_per_file[source_idx]
+        if defines:
+            self.merge_defined(items)
+            items = self._defined
+        else:
+            # replace the current target
+            items[source_idx] = self._items_per_file[source_idx]
 
-        file = self.open(filename, 'wb')
+        file = FileWrapper.open(filename, 'wb')
         try:
-            print("DEBUG %s %s" % (file.name, file.mode))
             pickle.dump(items, file)
         finally:
             file.close()
+
+        if defines:
+            return [filename] + list(self.llen(self._defined))
 
         return [filename] + list(self.llen(items[source_idx]))
 
@@ -299,6 +285,10 @@ class Database(object):
                 shard = 0
                 result = self.write_shard(file)
 
+
+            file = path.join(self._dir, 'defines.pickle')
+            self.write_shard(file, None, True)
+
             if result:
                 dur = time.monotonic() - start
                 print('DEBUG written to %s: entries=%u locations=%u shard=%u/%u time=%.3fms' % (*result, shard + 1, num_shards, dur * 1000))
@@ -324,21 +314,57 @@ class Database(object):
 
     # merge item from current target into all items
     def merge(self, item):
+        if 'name' not in item:
+            print('item %s' % item)
+            raise RuntimeError('invalid item')
+
+        if item['type'] in (DefinitionType.DEFINE, DefinitionType.AUTO_INIT):
+            value = item['value']
+            if value==None and item['auto']!=None:
+                value=item['auto']
+            if value==None:
+                item['auto'] = Database.beautify(item['name'])
+                item['value'] = item['auto']
+                value = item['auto']
+            self._defined[item['name']] = {
+                'name': item['name'],
+                'value': item['value'],
+                'auto': item['auto'],
+                'type': item['type'],
+                'source': item['source']
+            }
         if item['name'] in self._items:
-            locations = self._items[item['name']]['locations']
-            # print(type(locations), locations)
-            locations += item['locations']
-            item['locations'] = list(set(locations))
-            self._items[item['name']] = item
+            item2 = self._items[item['name']]
+            if 'locations' in item:
+                item['locations'].append(self.item_location(item2))
+                item2['locations'].append(self.item_location(item))
+                locations = item2['locations']
+                locations += item['locations']
+                item2['locations'] = list(set(locations))
+                self._items[item['name']] = item
+            else:
+                item2.update({
+                    'value': item['value'],
+                    'auto': item['auto']
+                })
+                item2['locations'].append(self.item_location(item))
             return
-        self._items[item['name']] = item
+        if 'locations' in item:
+            self._items[item['name']] = item
+        else:
+            self._items[item['name']] = item
+            self._items[item['name']]['locations'] = [self.item_location(item)]
 
     def llen(self, items):
         entries = 0
         locations = 0
-        for name, item in items.items():
-            entries += 1
-            locations += len(item['locations'])
+        try:
+            for item in items.values():
+                entries += 1
+                locations += len(item['locations'])
+        except:
+            entries = len(items)
+            locations = 0
         return (entries, locations)
 
     # returns True for items that are statically defined
@@ -358,6 +384,8 @@ class Database(object):
         for items in self._items_per_file.values():
             for item in items.values():
                 self.merge(item)
+        for item in self._defined.values():
+            self.merge(item)
         new = self.llen(self._items)
         print('DEBUG rebuild items (old %u, %u -> new %u, %u)' % tuple(list(old) + list(new)))
 
@@ -405,7 +433,8 @@ class Database(object):
                     print("auto value of %s was modified" % (name))
                     item['auto'] = auto_value
                     item['adb'] = False
-            item['locations'].append('%s:%s' % (type, source))
+            item['locations'].append(self.item_location({'type': type, 'source': source}))
+            item['locations'].append(self.item_location(item))
             item['locations'] = list(set(item['locations']))
             self.merge(item)
         else:
@@ -415,11 +444,15 @@ class Database(object):
                 'type': type,
                 'value': value,
                 'auto': auto_value,
-                'locations': ['%s:%s' % (type, source)],
+                'locations': [],
                 'vdb': False,
                 'adb': False
             }
+            items[name]['locations'].append(self.item_location(items[name]))
             self.merge(items[name])
+
+    def item_location(self, item):
+        return '%s:%s' % (item['type'], item['source'])
 
     # add items from preprocessor
     def add_items(self, items):
@@ -432,10 +465,11 @@ class Database(object):
 
     # write locations
     def write_locations(self, file: TextIOWrapper, item):
+        loc = list(set(item['locations']))
         if self.config.locations_one_per_line:
-            file.write('//' + '\n//'.join(item['locations']))
+            file.write('//' + '\n//'.join(loc))
         else:
-            file.write('// %s\n' % ', '.join(item['locations']))
+            file.write('// %s\n' % ', '.join(loc))
 
     def beautify(name):
         name = name.replace('_', ' ')
@@ -496,6 +530,12 @@ class Database(object):
                 file.write('#include "spgm_auto_strings.h"\n')
                 for item in self._items.values():
                     if not self.is_static(item):
+                        if item['name'] not in self._defined:
+                            print('WARNING: cannot find %s in defined' % item['name'])
+                        else:
+                            defined = self._defined[item['name']]
+                            if defined['value']!=item['value']:
+                                raise RuntimeError('item %s defined does not match %s!=%s' % (item['name'], defined['value'], item['value']))
                         self.write_define(file, item)
                         count += 1
         except OSError as e:

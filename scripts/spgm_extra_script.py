@@ -135,7 +135,11 @@ class SpgmExtraScript(object):
 
         SpgmConfig.verbose('waiting for lock...')
         if not self.lock.acquire(True, 60.0):
-            raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
+            time.sleep(5)
+            if not self.lock.acquire(True, 60.0):
+                time.sleep(5)
+                if not self.lock.acquire(True, 60.0):
+                    raise RuntimeError('cannot aquire lock for run_spgm_generator. target=%s' % target)
         try:
             SpgmConfig.verbose('lock acquired...')
             # if config.is_cached('generator') and False:
