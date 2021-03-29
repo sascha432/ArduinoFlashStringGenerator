@@ -8,13 +8,13 @@ PROGMEM_STRING_DEF(Example2, "Example 2");                                      
 PROGMEM_STRING_DEF(UnusedStaticExample, "UnusedStaticExample");                                                                                                  // default
 // PROGMEM_STRING_DEF:src/example.cpp:16:1, SPGM:src/example.cpp:56:18
 PROGMEM_STRING_DEF(mime_type_text_html, "text/html");                                                                                                            // default
-// PROGMEM_STRING_DEF:src/example.cpp:17:1, SPGM:src/example.cpp:70:18, SPGM:src/example.cpp:71:18
+// PROGMEM_STRING_DEF:src/example.cpp:17:1, SPGM:src/example.cpp:68:18
 PROGMEM_STRING_DEF(0, "0");                                                                                                                                      // default
-// PROGMEM_STRING_DEF:src/example.cpp:18:1, SPGM:src/example.cpp:71:18, SPGM:src/example.cpp:72:18
+// PROGMEM_STRING_DEF:src/example.cpp:18:1, SPGM:src/example.cpp:69:18
 PROGMEM_STRING_DEF(1, "1");                                                                                                                                      // default
 // PROGMEM_STRING_DEF:src/example.cpp:19:1
 PROGMEM_STRING_DEF(test_str, "A test string");                                                                                                                   // default
 // PROGMEM_STRING_DEF:include/example.h:7:1
 PROGMEM_STRING_DEF(IncludeTest, "Include Test String");                                                                                                          // default
-// PROGMEM_STRING_DEF:src/example.cpp:42:1, SPGM:src/example.cpp:81:29, SPGM:src/example.cpp:82:29
+// PROGMEM_STRING_DEF:src/example.cpp:42:1, SPGM:src/example.cpp:79:29
 PROGMEM_STRING_DEF(webui_json_type, "type");                                                                                                                     // default

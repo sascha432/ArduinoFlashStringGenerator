@@ -5,7 +5,7 @@
 import sys
 import os
 import fnmatch
-from os import path
+from os import path, sep
 from . import Item
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
@@ -20,7 +20,7 @@ except Exception as e:
     sys.exit(1)
 
 class SpgmPreprocessor(Preprocessor):
-    def __init__(self):
+    def __init__(self, display_info = True):
         Preprocessor.__init__(self)
         self.define("FLASH_STRINGS_AUTO_INIT 1")
         self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)")
@@ -29,10 +29,9 @@ class SpgmPreprocessor(Preprocessor):
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
         self._skip_includes = []
         self._items = []
-        self._include_counter = 0
-        self._include_once = []
-        self._counter = 0
+        # self._include_once = []
         self._files = []
+        self._display_info = display_info
         # self.debugout = sys.stdout
 
     def add_skip_include(self, include):
@@ -106,10 +105,15 @@ class SpgmPreprocessor(Preprocessor):
 
         # SpgmConfig.debug('pcpp %s' % includepath)
 
-        self._counter += 1
         try:
             result = Preprocessor.on_file_open(self, is_system_include, includepath)
-            self._files.append(includepath)
+            if not includepath in self._files:
+                self._files.append(includepath)
+            if self._display_info:
+                # tmp = includepath.split(os.sep)
+                # if len(tmp)>4:
+                #     includepath = os.sep.join(tmp[-4:])
+                print('Preprocessing %s' % path.relpath(includepath))
         except Exception as e:
             raise e
         return result
@@ -256,9 +260,19 @@ class SpgmPreprocessor(Preprocessor):
         return self._items
 
     @property
-    def include_counter(self):
-        return self._counter
+    def files(self):
+        return self._files
 
     def cleanup(self):
         self._items = []
-        self._counter = 0
+        self._files = []
+        try:
+            # these may not exist
+            del self.lineno
+            del self.column
+            del self.source
+        except:
+            pass
+
+    def __reduce__(self):
+        return (self.__class__, (self.include_once, self.macros))

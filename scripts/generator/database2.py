@@ -194,7 +194,7 @@ class Database(DatabaseOutputHelpers):
         self._json_file = path.join(self._dir, '_debug.json');
 
         # lock for the database files
-        self._lock = threading.Lock()
+        self._lock = threading.BoundedSemaphore()
 
         # all values by name
         self._values = {}
@@ -468,6 +468,7 @@ class Database(DatabaseOutputHelpers):
     # add items from preprocessor
     def add_items(self, items):
         for item in items:
+            # print(item['i18n'])
             self.add(item['source'], item['name'], item['type'], item['value'], item['data'])
 
         # rewrite database

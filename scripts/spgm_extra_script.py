@@ -10,9 +10,7 @@ from SCons.Script import COMMAND_LINE_TARGETS
 import os
 from os import path
 import sys
-import inspect
 import tempfile
-import shlex
 import subprocess
 import fnmatch
 from generator import ExportType, ItemType, SpgmConfig, Item, Generator, SpgmPreprocessor
@@ -21,9 +19,8 @@ import generator
 from typing import List
 from pathlib import Path
 import pickle
+import atexit
 import json
-import struct
-import enum
 import tempfile
 import time
 import click
@@ -33,9 +30,31 @@ DefaultEnvironmentCall('Import')("env")
 
 class SpgmExtraScript(object):
 
+    temporary_files = []
+
+    def temporary_files_add(file):
+        if file in SpgmExtraScript.temporary_files:
+            return
+        SpgmExtraScript.temporary_files.append(file)
+
+    def temporary_files_remove(file):
+        if file in SpgmExtraScript.temporary_files:
+            SpgmExtraScript.temporary_files.remove(file)
+
+    def exit_handler():
+        for file in SpgmExtraScript.temporary_files:
+            try:
+                if path.isfile(file):
+                    os.unlink(file)
+            except Exception as e:
+                print('Exception %s' % e)
+
     def __init__(self):
         self.verbose = SpgmConfig._verbose
         self._source_files = []
+        self._lock = threading.BoundedSemaphore()
+        self._pcpp_cache = None
+        atexit.register(SpgmExtraScript.exit_handler)
 
     #
     # Setup SPGM builder
@@ -127,8 +146,6 @@ class SpgmExtraScript(object):
         start_time = time.monotonic()
         config = SpgmConfig(env)
 
-        target_path = target[0].get_abspath()
-
         # create list of all files
         SpgmConfig.debug('source files', True)
         files = []
@@ -137,7 +154,6 @@ class SpgmExtraScript(object):
             if file!=config.definition_file and not config.is_source_excluded(file):
                 SpgmConfig.debug('source %s' % file)
                 files.append((file, node.get_path()))
-                print('Preprocessing %s' % node.get_path())
 
         if not files:
             SpgmConfig.debug('no files for %s' % target)
@@ -146,8 +162,17 @@ class SpgmExtraScript(object):
         # create generator
         SpgmConfig.debug('creating generator object', True)
         gen = Generator(config, files, target, env)
-        gen.language = config.output_language
 
+        # get a lock for reading the database and wait for any files being written
+        # the database has its own lock
+        if not self._lock.acquire(True, 60.0):
+            gen._database.add_error('cannot acquire lock for reading files')
+        try:
+            gen.read_database()
+        finally:
+            self._lock.release()
+
+        gen.language = config.output_language
 
         # create config preprocessor
         data = {
@@ -158,18 +183,30 @@ class SpgmExtraScript(object):
             'include_dirs': config.include_dirs,
             'skip_includes': config.skip_includes
         }
+
         try:
+            tmpfile = None
+            cachefile = None
+
+            if self._pcpp_cache==None:
+                with tempfile.NamedTemporaryFile('wb', delete=False) as file:
+                    cachefile = file.name
+                    SpgmExtraScript.temporary_files_add(cachefile)
+            else:
+                cachefile = self._pcpp_cache
+
             with tempfile.NamedTemporaryFile('wt', delete=False) as file:
                 file.write(json.dumps(data))
                 tmpfile = file.name
+                SpgmExtraScript.temporary_files_add(tmpfile)
 
             args = config.pcpp_bin.split(' ')
-            args += ['--file', tmpfile]
+            args += ['--file', tmpfile, '--cache', cachefile, '--info']
             if SpgmConfig._verbose:
                 args.append('--verbose')
                 # display all output
                 proc = subprocess.Popen(args, text=True)
-                result =proc.wait(timeout=300)
+                result = proc.wait(timeout=300)
                 errs = ''
             else:
                 # collect stderr output and display on error
@@ -178,6 +215,7 @@ class SpgmExtraScript(object):
                 result = proc.returncode
 
             if result!=0:
+                time.sleep(1)
                 print(errs, file=sys.stderr)
                 raise RuntimeError('processor failed with exit code %u. cmd:\n%s\n' % (result, ' '.join(args)))
 
@@ -190,29 +228,62 @@ class SpgmExtraScript(object):
 
             gen._database.add_target_files(output['files'], output['files_hash'])
 
-            gen.copy_to_database(output['items'])
-            SpgmConfig.debug('creating output files', True)
+            # get a lock for updating files
+            if not self._lock.acquire(True, 60.0):
+                gen._database.add_error('cannot acquire lock for writing files')
+            try:
 
-            num = len(output['items'])
-            include_counter = len(output['files'])
+                if self._pcpp_cache==None:
+                    # update our cache file
+                    self._pcpp_cache = cachefile
+                    cachefile = None
+                elif cachefile==self._pcpp_cache:
+                    # do not delete our current cache
+                    cachefile = None
+                else:
+                    st1 = os.stat(cachefile)
+                    st2 = os.stat(self._pcpp_cache)
+                    if st1.st_mtime_ns>st2.st_mtime_ns:
+                        # the new cache is more recent
+                        try:
+                            if path.isfile(self._pcpp_cache):
+                                os.unlink(self._pcpp_cache)
+                            SpgmExtraScript.temporary_files_remove(self._pcpp_cache)
+                        except:
+                            pass
+                        self._pcpp_cache = cachefile
+                        cachefile = None
 
-            SpgmConfig.debug('output_language %s' % gen.language)
-            SpgmConfig.debug('declaration_file %s' % config.declaration_file)
-            SpgmConfig.debug('definition_file %s' % config.definition_file)
-            SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
+                gen.copy_to_database(output['items'])
 
-            # create output files
+                SpgmConfig.debug('creating output files', True)
 
-            gen.create_output_header(config.declaration_file, config.declaration_include_file)
-            gen.create_output_define(config.definition_file)
-            gen.create_output_static(config.statics_file)
-            gen.create_output_auto_defined(config.auto_defined_file)
+                num = len(output['items'])
+                include_counter = len(output['files'])
 
-            SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
+                SpgmConfig.debug('output_language %s' % gen.language)
+                SpgmConfig.debug('declaration_file %s' % config.declaration_file)
+                SpgmConfig.debug('definition_file %s' % config.definition_file)
+                SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
+
+                # create output files
+
+                gen.create_output_header(config.declaration_file, config.declaration_include_file)
+                gen.create_output_define(config.definition_file)
+                gen.create_output_static(config.statics_file)
+                gen.create_output_auto_defined(config.auto_defined_file)
+
+                SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
+            finally:
+                self._lock.release()
 
         finally:
-            os.unlink(tmpfile);
-
+            if tmpfile:
+                os.unlink(tmpfile);
+                SpgmExtraScript.temporary_files_remove(tmpfile)
+            if cachefile:
+                os.unlink(cachefile)
+                SpgmExtraScript.temporary_files_remove(cachefile)
 
     #
     # run SPGM generator on target

@@ -163,7 +163,7 @@ class SpgmConfig(SpgmCache):
 
     @property
     def build_database_compression(self):
-        return self.cache('build_database_compression', lambda: CompressionType.fromString(self._get_string('build_database_compression', 'lzma')))
+        return self.cache('build_database_compression', lambda: CompressionType.fromString(self._get_string('build_database_compression', 'none')))
 
     @property
     def output_language(self):

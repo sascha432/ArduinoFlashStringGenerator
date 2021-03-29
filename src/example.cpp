@@ -65,9 +65,6 @@ void loop() {
 
     Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2));
 
-
-
-
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
     Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3)));
@@ -83,5 +80,4 @@ void loop() {
 
     delay(1000);
 }
-
 

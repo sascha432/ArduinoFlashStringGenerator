@@ -5,6 +5,7 @@
 import argparse
 import json
 import sys
+import pickle
 from os import path
 import os
 try:
@@ -20,6 +21,15 @@ except Exception as e:
     sys.exit(1)
 from generator import SpgmPreprocessor
 
+class LexToken(object):
+    def __init__(self, tok):
+        self.type = tok.type
+        self.value = tok.value
+        self.source = tok.source
+        self.lineno = tok.lineno
+        if hasattr(tok, 'expanded_from'):
+            self.expanded_from = getattr(tok, 'expanded_from')
+
 def get_hash(files):
     hash_files = []
     for file in files:
@@ -31,7 +41,9 @@ def get_hash(files):
 
 parser = argparse.ArgumentParser(description='PCPP')
 parser.add_argument('--file', help="temporary file to exchange data", required=True, type=argparse.FileType('r+t'))
-parser.add_argument('-v', '--verbose', help='verbose', action='store_true', default=False)
+parser.add_argument('--cache', help="temporary file to cache the preprocessor object", type=argparse.FileType('r+b'))
+parser.add_argument('-v', '--verbose', help='enable verbose output', action='store_true', default=False)
+parser.add_argument('-i', '--info', help='display files being processed', action='store_true', default=False)
 args = parser.parse_args()
 
 def verbose(*vargs, **kwargs):
@@ -40,14 +52,22 @@ def verbose(*vargs, **kwargs):
 
 config = json.loads(args.file.read())
 
-
 # if config['target']['files']:
 #     if get_hash(config['target']['files'])==config['target']['hash']:
 #         print('no changes detected')
 #         sys.exit(1)
 
+try:
+    fcpp = SpgmPreprocessor(args.info)
+    data = pickle.load(args.cache)
+    fcpp.include_once = data['include_once']
+    fcpp.macros = data['macros']
+except EOFError as e:
+    fcpp = SpgmPreprocessor(args.info)
+except Exception as e:
+    verbose('failed to load object from cache: %s' % e)
+    fcpp = SpgmPreprocessor(args.info)
 
-fcpp = SpgmPreprocessor()
 for define, value in config['defines']:
     verbose('define %s=%s' % (define, value))
     fcpp.define('%s %s' % (define, value))
@@ -92,12 +112,13 @@ for item in fcpp.items:
             'value': item._value,
             'auto': item._value,
             'data': item._data
+            # 'i18n': item.i18n.translations
         }
         items.append(item_out)
 
-verbose('creating output files... %u items from %u files' % (len(items), len(fcpp._files)))
+verbose('creating output files... %u items from %u files' % (len(items), len(fcpp.files)))
 
-processed_files = sorted(list(set(fcpp._files)), key=lambda val: val)
+processed_files = sorted(fcpp.files)
 
 out = {
     'files': processed_files,
@@ -112,5 +133,20 @@ out = {
 args.file.seek(0)
 args.file.truncate(0)
 args.file.write(json.dumps(out))
+args.file.close()
+
+fcpp.cleanup()
+
+args.cache.seek(0)
+args.cache.truncate(0)
+
+for key, macro in fcpp.macros.items():
+    if macro.value!=None:
+        for i, tok in enumerate(macro.value):
+            macro.value[i] = LexToken(tok)
+pickle.dump({
+    'include_once': fcpp.include_once,
+    'macros': fcpp.macros
+}, args.cache)
 
 sys.exit(0)

@@ -49,8 +49,12 @@ class __FlashStringHelper;
     }
 #else
 
+#ifndef AUTO_STRING_DEF
 #define AUTO_STRING_DEF(...)
+#endif
+#ifndef FLASH_STRING_GENERATOR_AUTO_INIT
 #define FLASH_STRING_GENERATOR_AUTO_INIT(...)
+#endif
 #endif
 
 #include "spgm_auto_strings.h"

@@ -7,21 +7,17 @@ try:
 except:
     pass
 from io import TextIOWrapper
-import pickle
 try:
     from SCons.Node import FS
 except:
     pass
-import os
-import json
 import re
 import pickle
-from .types import ItemType, DebugType
 from .item import Item
 from .config import SpgmConfig
-from .database2 import Database, v2
+from .database2 import Database
 import generator
-from typing import List, Dict, Iterable
+from typing import List, Dict
 
 setattr(generator, 'get_spgm_extra_script', lambda: generator.spgm_extra_script)
 
@@ -52,6 +48,9 @@ class Generator(object):
         self._files = files
         self._language = {'default': 'default'} # type: Dict[str, List[str]]
         self._database = Database(self, target)
+
+
+    def read_database(self):
         self._database.read();
 
     # add items from preprocessor
