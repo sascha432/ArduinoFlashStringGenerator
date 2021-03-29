@@ -2,13 +2,13 @@
 
 This tool can generate PROGMEM strings from source code and a database with support for translations. It is based on [pcpp](https://pypi.org/project/pcpp/), a pure python C preprocessor.
 
-Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Multiple languages are supported, for example `SPGM(hello_world, "Hello World!", fr_FR: "Bonjour le monde!", de_DE: "Hallo Welt!")`. All strings/translations can be defined directly inside the source code, a centrelized header file or the JSON database file. The location of definitions and usage is stored as well, to quickly find it in the source code.
+Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Multiple languages are supported, for example `SPGM(hello_world, "Hello World!", fr_FR: "Bonjour le monde!", de_DE: "Hallo Welt!")`. All strings/translations can be defined directly inside the source code or a centralized header file. The location of definitions and usage is stored as well, to quickly find it in the source code.
 
 ## Change Log
 
 Version 0.1.x is now integrated into for PlatformIO Core
 
-[Change Log v0.1.1](CHANGELOG.md)
+[Change Log v0.1.3](CHANGELOG.md)
 
 ## Requirements
 
@@ -32,7 +32,6 @@ To install pcpp, run
 pio run -t spgm_install_requirements
 ```
 
-
 ### platformio.ini
 
 ```ini
@@ -40,11 +39,11 @@ pio run -t spgm_install_requirements
 lib_deps = ArduinoFlashStringGenerator
 
 extra_scripts =
-    pre:scripts/spgm_extra_script.py
-    post:scripts/post_extra_script.py
+    pre:.../ArduinoFlashStringGenerator/scripts/spgm_extra_script.py
+    post:.../ArduinoFlashStringGenerator/scripts/post_extra_script.py
 ```
 
-The configuration options can found in this `platformio.ini`. All variables start with `custom_spgm_generator.`
+`...` is the location where ArduinoFlashStringGenerator is installed. The configuration options can found in this `platformio.ini`. All variables start with `custom_spgm_generator.`
 
 ### Required include directories
 
@@ -55,14 +54,14 @@ Add all include directories to `custom_spgm_generator.include_dirs`
 Getting a list for gcc
 
 ```bash
-$ echo "" | c:\users/sascha\.platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe -E -v -x c++ - -
+$ echo "" | .platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe -E -v -x c++ - -
 
 [...]
 #include "..." search starts here:
 #include <...> search starts here:
- .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/include
- .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/include-fixed
- .platformio\packages\toolchain-atmelavr\bin\../lib/gcc/avr/5.4.0/../../../../avr/include
+ .platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/include
+ .platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/include-fixed
+ .platformio/packages/toolchain-atmelavr/bin/../lib/gcc/avr/5.4.0/../../../../avr/include
 End of search list.
 [...]
 
@@ -71,16 +70,15 @@ $ echo "" | .platformio/packages/toolchain-xtensa@2.40802.200502/bin/xtensa-lx10
 [...]
 include "..." search starts here:
 #include <...> search starts here:
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/xtensa-lx106-elf
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/backward
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/include
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/include-fixed
- .platformio\packages\toolchain-xtensa@2.40802.200502\bin\../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/xtensa-lx106-elf
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include/c++/4.8.2/backward
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/include
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/include-fixed
+ .platformio/packages/toolchain-xtensa@2.40802.200502/bin/../lib/gcc/xtensa-lx106-elf/4.8.2/../../../../xtensa-lx106-elf/include
  [...]
 
 ```
-
 
 ### Testing the setup
 
@@ -93,9 +91,6 @@ Environment    Group     Name                       Title                       
 -------------  --------  -------------------------  ---------------------------  -----------------------------------------------------
 example        Advanced  compiledb                  Compilation Database         Generate compilation database `compile_commands.json`
 example        Custom    spgm_build                 build spgm strings
-example        Custom    spgm_export_all            export entire spgm database  export all SPGM strings
-example        Custom    spgm_export_auto           export spgm auto strings     export SPGM strings marked as auto
-example        Custom    spgm_export_config         export spgm config           export SPGM strings marked from config database
 example        Custom    spgm_install_requirements  install requirements         install requirements for SPGM generator
 example        Generic   clean                      Clean
 example        Platform  bootloader                 Burn Bootloader
@@ -192,7 +187,7 @@ If a name cannot be found, the tool will create a beautified version of it.
 
 For example: This_is_my_text = "This is my text"
 
-Once the project is compiled with spgm_build enabled, the `auto` version is added to the JSON database and can be edited there.
+Once the project is compiled with spgm_build enabled, another header file is created that contains `AUTO_STRING_DEF` of all undefined strings to simply add and change them. The default is `custom_spgm_generator.auto_defined_file = $PROJECT_INCLUDE_DIR/spgm_auto_defined.h`
 
 ### Internationalization and localization
 
@@ -203,6 +198,10 @@ There is no restriction for the language name except that it must be a valid C v
 For example:
 
 `SPGM(CURRENCY, "%.2f", en-US:"$%.2f", en_CA:"CA$%.2f",en_au:"AU$%.2f",de;es;it;fr;ch:"%.2fEUR")`
+
+#### UTF8 encoding and 8 bit data
+
+By default the encoding of the platform/OS is used to read and write files, but strings created are stored as 7 bit ascii and any binary data is hexadecimal encoded.
 
 #### Using a different language
 
@@ -259,46 +258,6 @@ auto str = SPGM(CURRENCY, "%.2f");
 An example program for Arduino Nano boards is included that uses all options available.
 
 ... [example.cpp](src/example.cpp)
-
-#### Translations
-
-The name of the string as key and contains all its information. If the default is defined in the source code, it cannot be changed in this file.
-
-It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying the JSON database file.
-
-***Warning***: If a string is defined in the source code, the definition in the database file will be updated silently
-
-```json
-    "Example1": {                   // name of the string
-        "auto": "Example1",         // this is the value the tool assigns automatically
-                                    // to modify it, change the key to default. If default
-                                    // is defined, auto will be removed
-        "use_counter": 2,           // shows how often this id is being used
-        "default": "Example #1"
-        // translations
-        "i18n": {
-            "en-US": "Example #1 US version",
-            "en-CA": "Example #1 CA version",
-            "en-GB": "Example #1 GB version",
-            "de-CH": "Beispiel #1",
-            "fr-CH": "Exemple #1"
-        },
-        // source and line number where the string is defined or used
-        "locations": "src/example.cpp:9 (PROGMEM_STRING_DEF),src/example.cpp:34 (SPGM)"
-    },
-    "CURRENCY": {
-        "default": "%.2f",
-        "i18n": {
-            "en-US": "$%.2f",
-            "en_CA": "CA$%.2f",
-            "en_au": "AU$%.2f",
-            "it;fr;es;de": "%.2fEUR",
-            // redifinitions must match the previous value
-            "bg;de": "%.2fEUR"
-        },
-        "locations": "src/example.cpp:52 (SPGM),src/example.cpp:53 (SPGM)"
-    }
-```
 
 ### spgm_auto_strings.h
 

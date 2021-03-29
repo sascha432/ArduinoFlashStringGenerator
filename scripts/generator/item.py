@@ -24,8 +24,8 @@ class Item(SourceLocation):
     # name                      name of the item
     # item                      used internally for the parser to verify that item is None
     # config_data               unmodified json data from the configuration file
-    def __init__(self, definition_type=DefinitionType.DEFINE, source=None, lineno=None, name=None, item=None, config_data=None):
-        SourceLocation.__init__(self, source, lineno)
+    def __init__(self, definition_type=DefinitionType.DEFINE, source=None, lineno=None, name=None, item=None, config_data=None, column=None):
+        SourceLocation.__init__(self, source, lineno, column=column)
         if item!=None:
             raise RuntimeError('item not None: %s' % item)
         if isinstance(definition_type, str):
@@ -33,7 +33,7 @@ class Item(SourceLocation):
         if not isinstance(definition_type, DefinitionType):
             raise RuntimeError('invalid definition_type: %s' % definition_type)
         self.definition_type = definition_type
-        SourceLocation.append(self, source, lineno, definition_type)
+        SourceLocation.append(self, source, lineno, definition_type, column=column)
         self._lang = i18n_config.DEFAULT_LANGUAGE
         self._value_buffer = None
         self.i18n = i18n(self)
@@ -42,6 +42,7 @@ class Item(SourceLocation):
         self._value = None
         self._auto = None
         self._config_data = config_data
+        self._data = {}
 
     def __eq__(self, o: object) -> bool:
         return id(self) == id(o)
@@ -133,10 +134,10 @@ class Item(SourceLocation):
             return self._value_buffer
         return ''
 
-    def remove(self):
-        SourceLocation.remove(self, self._source, self._lineno)
-        self._source = None
-        self._lineno = ItemType.REMOVED
+    # def remove(self):
+    #     SourceLocation.remove(self, self._source, self._lineno)
+    #     self._source = None
+    #     self._lineno = ItemType.REMOVED
 
     def push_value(self):
         if Item.DebugType.PUSH_VALUE in Item.DEBUG:
@@ -158,6 +159,11 @@ class Item(SourceLocation):
                     raise RuntimeError('language is None: %s' % self)
                 self.lang = self.value_buffer
             else:
+                # if self.lang=='charset':
+                #     self._data['encoding'] = self.value_buffer.strip()
+                #     self.lang = None
+                # else:
+
                 # set translation and remove language
                 if not self.has_value_buffer:
                     raise RuntimeError('translation is None: %s' % self)
@@ -167,9 +173,6 @@ class Item(SourceLocation):
         self.clear_value_buffer()
 
 
-    def beautify(self, name):
-        name = name.replace('_', ' ')
-        return name
 
     def validate(self):
         if self.name==None:
@@ -245,41 +248,41 @@ class Item(SourceLocation):
         locations.extend(sorted(tmp, key=lambda l: (l.source, l.lineno)))
         return locations
 
-    def _merge_build_locations(self, build):
-        if self.use_counter==0 and not self.static:
-            return
-        locations = build.find(self.name)
-        if locations:
-            locations = Item._merge_locations(self._locations, locations).copy()
+    # def _merge_build_locations(self, build):
+    #     if self.use_counter==0 and not self.static:
+    #         return
+    #     locations = build.find(self.name)
+    #     if locations:
+    #         locations = Item._merge_locations(self._locations, locations).copy()
 
-    def _merge_item_locations(self, item):
-        if not self.is_type(item, (ItemType.FROM_SOURCE,)) or not item.has_locations:
-            return
-        Item._merge_locations(self._locations, item.locations)
+    # def _merge_item_locations(self, item):
+    #     if not self.is_type(item, (ItemType.FROM_SOURCE,)) or not item.has_locations:
+    #         return
+    #     Item._merge_locations(self._locations, item.locations)
 
-    @property
-    def use_counter(self):
-        return len([True for l in self._locations if l.definition_type==DefinitionType.SPGM])
+    # @property
+    # def use_counter(self):
+    #     return len([True for l in self._locations if l.definition_type==DefinitionType.SPGM])
 
-    @property
-    def static(self):
-        # l = [str(l) for l in self._locations if l.definition_type==DefinitionType.DEFINE]
-        # if len(l)!=0:
-        #     SpgmConfig.debug('static %s %s' % (self.name, l), True)
-        #     return True
-        # return False
-        return len([True for l in self._locations if l.definition_type==DefinitionType.DEFINE])!=0
+    # @property
+    # def static(self):
+    #     # l = [str(l) for l in self._locations if l.definition_type==DefinitionType.DEFINE]
+    #     # if len(l)!=0:
+    #     #     SpgmConfig.debug('static %s %s' % (self.name, l), True)
+    #     #     return True
+    #     # return False
+    #     return len([True for l in self._locations if l.definition_type==DefinitionType.DEFINE])!=0
 
-    @property
-    def is_from_source(self):
-        if self.static:
-            return False
-        if SpgmConfig.add_unused:
-            return True
-        counter = self.use_counter
-        if counter==0:
-            return False
-        return not self.static
+    # @property
+    # def is_from_source(self):
+    #     if self.static:
+    #         return False
+    #     if SpgmConfig.add_unused:
+    #         return True
+    #     counter = self.use_counter
+    #     if counter==0:
+    #         return False
+    #     return not self.static
 
     @property
     def has_locations(self):
@@ -293,9 +296,9 @@ class Item(SourceLocation):
     def locations(self, locations):
         self._locations = locations
 
-    @property
-    def locations_str(self):
-        return self.get_locations_str()
+    # @property
+    # def locations_str(self):
+    #     return self.get_locations_str()
 
     def get_locations_str(self, sep=', ', fmt='%s', locations=None):
         if locations==None:
@@ -304,16 +307,21 @@ class Item(SourceLocation):
             return sep.join([l.format(fmt) for l in locations])
         return ''
 
+    def beautify(self, name):
+        name = name.replace('_', ' ')
+        return name
+
     def __str__(self):
         res = 'type=%s name=%s value="%s"' % (self.definition_type.value, self.name, self.value)
         if self.i18n.translations:
             res +=' i18n=%s' % self.i18n.__repr__()
         if self.has_auto_value:
             res += ' <auto_value>'
-        res += ' use_counter=%u source=%s' % (self.use_counter, self.get_source())
+        res += ' source=%s' % (self.get_source())
         if self.has_locations:
             res += ' locations="%s"' % self.get_locations_str(sep=',')
-        res += ' static=%s' % self.static
+
+        res += ' data %s' % self._data
 
         if DebugType.ITEM_DEBUG_ATTR in (self.DEBUG) and hasattr(self, '_lang'):
             res +=  ' debug=%s' % {'lang': self.lang, 'args': self.arg_num, 'buffer': self._value_buffer, 'item_type': str(self.type).split('.')[-1], '_auto': self._auto, '_value': self._value}

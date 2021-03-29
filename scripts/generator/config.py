@@ -10,7 +10,7 @@ import fnmatch
 import enum
 import re
 import click
-import lzma
+import glob
 
 class SpgmConfig(SpgmCache):
 
@@ -162,10 +162,6 @@ class SpgmConfig(SpgmCache):
         return self.cache('add_unused', lambda: self._get_bool('add_unused', False))
 
     @property
-    def build_database_num_shards(self):
-        return self.cache('build_database_num_shards', lambda: max(1, min(0xffff, int(self._get_string('build_database_num_shards', '32')))))
-
-    @property
     def build_database_compression(self):
         return self.cache('build_database_compression', lambda: CompressionType.fromString(self._get_string('build_database_compression', 'lzma')))
 
@@ -186,6 +182,10 @@ class SpgmConfig(SpgmCache):
         return not (path.isfile(self.declaration_file) and path.isfile(self.definition_file))
 
     @property
+    def is_clean(self):
+        return len(glob.glob(path.join(self.build_database_dir, 'database.pickle*'))) == 0
+
+    @property
     def definition_file(self):
         return self.cache('definition_file', lambda: self._get_path('definition_file', '$PROJECT_SRC_DIR/spgm_auto_strings.cpp'))
 
@@ -194,8 +194,12 @@ class SpgmConfig(SpgmCache):
         return self.cache('declaration_file', lambda: self._get_path('declaration_file', '$PROJECT_INCLUDE_DIR/spgm_auto_strings.h'))
 
     @property
-    def json_database(self):
-        return self.cache('json_database', lambda: self._get_path('json_database', '$PROJECT_DIR/spgm_json_database.json'))
+    def statics_file(self):
+        return self.cache('statics_file', lambda: self._get_path('statics_file', '$PROJECT_INCLUDE_DIR/spgm_static_strings.h'))
+
+    @property
+    def auto_defined_file(self):
+        return self.cache('auto_defined_file', lambda: self._get_path('auto_defined_file', '$PROJECT_INCLUDE_DIR/spgm_auto_defined.h'))
 
     @property
     def build_database_dir(self):

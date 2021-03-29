@@ -6,16 +6,17 @@ from .types import DefinitionType, SourceType, ItemType
 from os import path
 
 class Location(object):
-    def __init__(self, source, lineno, definition_type='REMOVED'):
+    def __init__(self, source, lineno, definition_type='REMOVED', column=None):
         self.source = source
         self.lineno = lineno
+        self.column = column
         self.definition_type = DefinitionType(definition_type)
 
     def format(self, fmt):
-        return fmt % ('%s:%s (%s)' % (self.source, self.lineno, self.definition_type.value))
+        return fmt % ('%s:%s:%s (%s)' % (self.source, self.lineno, self.column, self.definition_type.value))
 
     def __eq__(self, o: object) -> bool:
-        return id(self)==id(o) or (isinstance(self.lineno, int) and isinstance(o.lineno, int) and self.source==o.source and self.lineno==o.lineno)
+        return id(self)==id(o) or (isinstance(self.lineno, int) and isinstance(o.lineno, int) and self.source==o.source and self.lineno==o.lineno and self.column==o.column)
 
     def __ne__(self, o: object) -> bool:
         return not self.__eq__(o)
@@ -24,31 +25,32 @@ class Location(object):
         return self.__repr__()
 
     def __repr__(self):
-        return str(tuple([self.source, str(self.lineno), str(self.definition_type.value)]))
+        return str(tuple([self.source, str(self.lineno), str(self.column), str(self.definition_type.value)]))
 
     def __hash__(self):
-        return hash('%s;%s;%s' % (self.source, self.lineno, self.definition_type.value))
+        return hash('%s;%s;%s;%s' % (self.source, self.lineno, self.column, self.definition_type.value))
 
-    def _tolist(self):
-        return [self.source, int(self.lineno), str(self.definition_type.value)]
+    # def _tolist(self):
+    #     return [self.source, int(self.lineno), str(self.definition_type.value)]
 
 class SourceLocation(object):
 
     display_source = SourceType.REL_PATH
 
-    def __init__(self, source, lineno):
+    def __init__(self, source, lineno, column=None):
         self.source = source
         self.lineno = lineno
+        self.column = column
         self._locations = []
 
-    def append(self, source, lineno, definition_type):
+    def append(self, source, lineno, definition_type, column):
         if isinstance(lineno, int) and source!=None:
-            self._locations.append(Location(source, lineno, definition_type))
+            self._locations.append(Location(source, lineno, definition_type, column))
 
-    def remove(self, source, lineno):
+    def remove(self, source, lineno, column):
         if isinstance(lineno, int) and source!=None:
             for location in self._locations:
-                if location.source==source and location.lineno==lineno:
+                if location.source==source and location.lineno==lineno and location.column==column:
                     self._locations.remove(location)
 
     # def validate(self, source, lineno):
@@ -58,7 +60,7 @@ class SourceLocation(object):
     def get_source(self, config_file='<config>'):
         if self.type==ItemType.FROM_CONFIG:
             return config_file
-        return '%s:%u' % (self._source, self._lineno)
+        return '%s:%u:%u' % (self._source, self._lineno, self.column)
 
     @property
     def source(self):
@@ -107,7 +109,7 @@ class SourceLocation(object):
 
     @property
     def source_str(self):
-        return '%s:%d' % (self._source, self.lineno)
+        return '%s:%d:%u' % (self._source, self.lineno, self.column)
 
     @property
     def type(self):

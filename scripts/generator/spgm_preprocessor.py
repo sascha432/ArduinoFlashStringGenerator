@@ -134,6 +134,7 @@ class SpgmPreprocessor(Preprocessor):
 
     def find_strings(self, oh=sys.stdout):
         self.lineno = 0
+        self.column = 1
         self.source = None
         done = False
         blanklines = 0
@@ -202,10 +203,13 @@ class SpgmPreprocessor(Preprocessor):
                     while newlinesneeded > 0:
                         # oh.write('\n')
                         newlinesneeded -= 1
+            if self.lineno!=toks[0].lineno:
+                self.column = 1
             self.lineno = toks[0].lineno
             # Account for those newlines in a multiline comment
             if toks[0].type == self.t_COMMENT1:
                 self.lineno += toks[0].value.count('\n')
+                self.column = 1
             # if emitlinedirective and self.line_directive is not None:
             #     oh.write(self.line_directive + ' ' + str(self.lineno) + ('' if self.source is None else (' "' + self.source + '"' )) + '\n')
             blanklines = 0
@@ -214,12 +218,15 @@ class SpgmPreprocessor(Preprocessor):
                 if tok.type=='CPP_ID' and tok.value.startswith('__INTERNAL_') and tok.value.endswith('_FLASH_STRING_START'):
                     parts = tok.value.split('_', 4)
                     type = parts[3]=='AUTOINIT' and 'AUTO_INIT' or parts[3]
-                    item = Item(type, self.source, self.lineno, item=item)
+                    item = Item(type, self.source, self.lineno, item=item, column=self.column)
                 elif tok.type=='CPP_ID' and tok.value in('__INTERNAL_SPGM_FLASH_STRING_END','__INTERNAL_DEFINE_FLASH_STRING_END', '__INTERNAL_AUTOINIT_FLASH_STRING_END'):
-                    item = self.add_item(item)
+                    item = self.add_item(item, toks)
                 elif item!=None:
+                    self.column += len(tok.value)
                     if tok.type=='CPP_STRING':
                         item.append_value_buffer(tok.value[1:-1])
+                    elif (tok.type=='CPP_DOT' and tok.value=='=') or tok.type=='CPP_EQUAL':
+                        item.push_value()
                     elif (tok.type=='CPP_DOT' and tok.value==',') or tok.type=='CPP_COMMA':
                         item.push_value()
                     elif (tok.type=='CPP_DOT' and tok.value==':') or tok.type=='CPP_COLON':
@@ -229,13 +236,14 @@ class SpgmPreprocessor(Preprocessor):
                         item.append_value_buffer(tok.value)
                     elif tok.type=='CPP_STRING':
                         item.append_value_buffer(tok.value[1:-1])
+                else:
+                    self.column += len(tok.value)
 
 
                 if Item.DebugType.TOKEN in Item.DEBUG and item:
                     print("value=%s type=%s %s" % (tok.value, tok.type, item))
 
-    def add_item(self, item):
-        # push any text from buffer that is left
+    def add_item(self, item, toks):
         if item.has_value_buffer:
             item.push_value()
         item.validate()

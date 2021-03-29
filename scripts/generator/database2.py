@@ -17,22 +17,14 @@ from io import TextIOWrapper
 
 class v2:
 
-    database = None # type: Database
-
-    def getDatabaseInstance():
-        return v2.database
-
     class Value(object):
-        def __init__(self, value, auto=False, override=False):
+        def __init__(self, value, override=False):
             self._value = value
-            self._auto = auto
             self._override = override
 
         def can_override(self, obj):
             if obj._value==None or self._override==False:
                 return False
-            if self._auto==True and obj._auto==False:
-                return True
             if self._value==None:
                 return True
             if self._value==obj._value and id(self)!=id(obj):
@@ -43,30 +35,19 @@ class v2:
             return id(self)==id(obj)
 
     class Item(dict):
-        def __init__(self, *args, **kwargs):
-            if len(args)==1:
-                self.__init_item__(*args)
-            elif len(args)==5:
-                self.__init_args__(*args)
-            else:
-                raise RuntimeError('invalid args=%u' % len(args))
-
-        def __init_args__(self, name, type, source, value=None, auto=None):
-            self._database = v2.getDatabaseInstance()
+        def __init__(self, name, type, source, value=None, data={}):
             if not isinstance(type, DefinitionType):
-                raise RuntimeError('invalid type=%s' % type(type))
+                type = DefinitionType.fromString(type)
             dict.__init__(self, {
                 'name': name,
                 'type': type,
                 'source': source,
                 'value': value,
-                'auto': auto,
-                'vdb': False,
-                'adb': False
+                'data': data
             });
 
-        def __init_item__(self, item):
-            self.__init__(item['name'], item['type'], item['source'], item['value'], item['auto']);
+        # def __init_item__(self, item):
+        #     self.__init__(item['name'], item['type'], item['source'], item['value'], item['data']);
 
         @property
         def name(self):
@@ -80,12 +61,23 @@ class v2:
             return hash(id_str)
 
         @property
+        def value(self):
+            value = self.__getitem__('value')
+            if value==None:
+                value = DatabaseOutputHelpers.beautify(self.name)
+            return value
+
+        @property
         def locations(self):
             return self._database.get_locations(self)
 
         @property
         def location(self):
             return '%s:%s' % (self.__getitem__('type'), self.__getitem__('source'))
+
+        @property
+        def has_value(self):
+            return self.__getitem__('value')!=None
 
         def __getitem__(self, key):
             if key=='locations':
@@ -105,408 +97,18 @@ class v2:
             return super().__setitem__(key, val)
 
         def __reduce__(self):
-            return (self.__class__, (self['name'], self['type'], self['source'], self['value'], self['auto']))
+            return (self.__class__, (self['name'], self['type'], self['source'], self['value'], self['data']))
 
 
-class Database(object):
-    def __init__(self, generator, target):
 
-        # Database is a singleton
-        if v2.database:
-            raise RuntimeError('Database already created')
-        v2.database = self
-
-        self._generator = generator
-
-        # output directory
-        self._dir = path.abspath(self.config.build_database_dir);
-
-        # human readable version of the database fopr debugging
-        self._json_file = path.join(self._dir, '_debug.json');
-
-        # lock for the database files
-        self._lock = threading.Lock()
-
-        # all values by name
-        self._values = {}
-        # all items with a defined value
-        self._defined = {}
-        # all items that belong to a target, usually a C file
-        self._items_per_file = {}
-        # list of targets and dependecies
-        self._targets = {}
-
-        # hash target and sources to identify in database
-        self._target = target;
-        self._sources_hash = None
-        # self._target_hash = None
-        if target!=None:
-            targets = []
-            sources = []
-            for node in self._target:
-                targets.append(node.get_path())
-                sources.append(node.srcnode().get_path())
-            self._sources_hash = hash(','.join(sources))
-            self._target_hash = hash(','.join(targets))
-
-    @property
-    def config(self):
-        return self._generator.config
-
-    @property
-    def source_idx(self):
-        return self._sources_hash
-
-    def get_target(self):
-        if not self._target_hash in self._targets:
-            self._targets[self._target_hash] = {
-                'files': [],
-                'files_hash': None
-            }
-        return self._targets[self._target_hash]
-
-    # create a sorted list of all stored locations
-    def get_locations(self, find_item):
-        locations = []
-        if find_item.index in self._defined:
-            locations.append(self._defined[find_item.index].location)
-        for item in self._defined.values():
-            if find_item.name==item.name:
-                locations.append(item.location)
-        for items in self._items_per_file.values():
-            if find_item.index in items:
-                locations.append(items[find_item.index].location)
-            for item in items.values():
-                if find_item.name==item.name:
-                    locations.append(item.location)
-        locations = sorted(list(set(locations)), key=lambda val: val)
-        return locations
-
-    def get_value(self, item, name):
-        if name in self._values:
-            return self._values[name]
-        return None
-
-
-    def set_value(self, item, name, value):
-        if name in self._values:
-            if value!=self._values[name]:
-                raise RuntimeError('cannot redefine %s %s!=%s' % (name, value, self._values[name]))
-        if value==None:
-            return False
-        self._values[name] = value
-        return True
-
-    # create a human readable version
-    def write_json(self):
-
-        # start = time.monotonic()
-
-        os.makedirs(self._dir, exist_ok=True)
-
-        tmp = {
-            'defined': {},
-            'unique': {}
-        }
-        for source_idx, items in self._items_per_file.items():
-            tmp[source_idx] = {}
-            for index, item in items.items():
-                item_out = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'auto': item['auto']}
-                if not item.name in tmp['unique']:
-                    tmp['unique'][item.name] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'auto': item['auto'], 'locations': str(item.locations)}
-                tmp[source_idx][index] = item_out
-        if self._defined:
-            for index, item in self._defined.items():
-                tmp['defined'][index] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'auto': item['auto']}
-                if not item.name in tmp['unique']:
-                    tmp['unique'][item.name] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'auto': item['auto'], 'locations': str(item.locations)}
-
-        with open(self._json_file, 'wt') as file:
-            file.write(json.dumps(tmp, indent=2))
-
-        # dur = time.monotonic() - start
-        # print('DEBUG written to %s: time %.3fms' % (self._json_file, dur * 1000))
-
-    # read shard or raw file with return_result=True
-    def read_shard(self, filename, return_result=False):
-        if not path.isfile(filename) and return_result:
-            return {}
-
-        file = FileWrapper.open(filename, 'rb')
-        try:
-            items = pickle.load(file)
-            if return_result:
-                return items
-        finally:
-            file.close()
-        for source_idx, items in items.items():
-            self._items_per_file[source_idx] = items
-            for item in items.values():
-                item['vdb'] = True
-                item['adb'] = True
-                self.merge(item)
-
-    def merge_defined(self, defined):
-        # print("MERGE %u" % len(defined))
-        if defined:
-            old = len(self._defined)
-            self._defined.update(defined)
-            for item in self._defined.values():
-                self.merge(item)
-            if old!=len(self._defined):
-                print("DEBUG: defined changed from %u to %u" % (old, len(self._defined)))
-
-
-    # read database
-    def read(self):
-
-        start = time.monotonic()
-
-        if not self._lock.acquire(True, 60.0):
-            raise RuntimeError('Failed to acquire database lock')
-        try:
-
-            self._defined = {}
-            self._items_per_file = {}
-            if self._target==None:
-                return
-
-            dir = path.join(self._dir, '*.pickle*')
-            files = glob.glob(dir);
-            if not files:
-                return
-
-            defined = None
-            shards = len(files)
-            for file in files:
-                if 'defines.pickle' in file:
-                    defined = self.read_shard(file, True)
-                else:
-                    self.read_shard(file)
-
-            self.merge_defined(defined)
-
-            # print('DEBUG read from %s: %u entries %u locations %u shards' % tuple([dir] + list(self.llen(self._items)) + [shards]))
-        finally:
-            self._lock.release();
-
-        self.dump();
-
-    # write single shard or entire database to file
-    def write_shard(self, path, source_idx=None, defines=False):
-
-        if defines==False and source_idx!=None and (not source_idx in self._items_per_file or not self._items_per_file[source_idx]):
-            return None
-
-        compressed_file = path + '.xz'
-        if self.config.build_database_compression == CompressionType.LZMA:
-            filename = compressed_file
-        else:
-            filename = path
-
-        # get a fresh copy from disk while the database is locked
-        items = self.read_shard(filename, True)
-        if defines:
-            self.merge_defined(items)
-            items = self._defined
-        else:
-            # replace the current target
-            items[source_idx] = self._items_per_file[source_idx]
-
-        file = FileWrapper.open(filename, 'wb')
-        try:
-            pickle.dump(items, file)
-        finally:
-            file.close()
-
-        if defines:
-            return [filename] + list(self.llen(self._defined))
-
-        return [filename] + list(self.llen(items[source_idx]))
-
-    # write database
-    def write(self):
-        if self._target==None:
-            return
-
-        start = time.monotonic()
-
-        if not self._lock.acquire(True, 60.0):
-            time.sleep(5)
-            if not self._lock.acquire(True, 60.0):
-                raise RuntimeError('Failed to acquire database lock')
-        try:
-
-            os.makedirs(self._dir, exist_ok=True)
-
-            num_shards = self.config.build_database_num_shards
-            if num_shards>1:
-                shard = self.source_idx % num_shards
-                file = path.join(self._dir, '%04x%04x.pickle' % (num_shards, shard))
-                result = self.write_shard(file, self.source_idx)
-            else:
-                file = path.join(self._dir, 'spgm.pickle')
-                shard = 0
-                result = self.write_shard(file)
-
-
-            file = path.join(self._dir, 'defines.pickle')
-            self.write_shard(file, None, True)
-
-            self.write_json()
-
-            if result:
-                dur = time.monotonic() - start
-                print('DEBUG written to %s: entries=%u locations=%u shard=%u/%u time=%.3fms' % (*result, shard + 1, num_shards, dur * 1000))
-
-        finally:
-            self._lock.release()
-
-        self.dump();
-
-    # dump database
-    def dump(self):
-        return;
-        print("---------------------------------------------")
-        for source_idx, items in self._items_per_file.items():
-            for index, item in items.items():
-                print(source_idx, index, item['type'], item['name'], item['locations'])
-        print("---------------------------------------------")
-
-    # merge item from current target into all items
-    def merge(self, item):
-        if 'name' not in item:
-            print('item %s' % item)
-            raise RuntimeError('invalid item')
-        if not isinstance(item, v2.Item):
-            raise RuntimeError('type %s not %s', type(item), type(v2.Item))
-
-        if item['type'] in (DefinitionType.DEFINE, DefinitionType.AUTO_INIT):
-            value = item['value']
-            if value==None and item['auto']!=None:
-                value=item['auto']
-            if value==None:
-                item['auto'] = Database.beautify(item.name)
-                item['value'] = item['auto']
-                value = item['auto']
-            self._defined[item.index] = v2.Item(item);
-        # if item.index in self._items:
-        #     item2 = self._items[item.index]
-        #     if item2['value']!=None and item['value']==None:
-        #         item['value'] = item2['value']
-        #     elif item['value']!=None and item2['value']==None:
-        #         item2['value'] = item['value']
-        #     else:
-        #         if item['value']!=item2['value']:
-        #             print('%s!=%s' % (item['value'], item2['value']))
-            # else:
-            #     item2.update({
-            #         'value': item['value'],
-            #         'auto': item['auto']
-            #     })
-        #     return
-        # self._items[item.index] = item
-
-    def llen(self, items):
-        entries = 0
-        locations = 0
-        try:
-            for item in items.values():
-                entries += 1
-                locations += len(item['locations'])
-        except:
-            entries = len(items)
-            locations = 0
-        return (entries, locations)
-
-    # returns True for items that are statically defined
-    def is_static(self, item):
-        if item['type']==DefinitionType.DEFINE:
-            return True
-        for loc in item.locations:
-            if loc.startswith('PROGMEM_STRING_DEF:'):
-                return True
-        return False
-
-    # def rebuild_items(self):
-    #     if self._target==None:
-    #         return
-    #     old = self.llen(self._items)
-    #     self._items = {}
-    #     for items in self._items_per_file.values():
-    #         for item in items.values():
-    #             self.merge(item)
-    #     for item in self._defined.values():
-    #         self.merge(item)
-    #     new = self.llen(self._items)
-    #     print('DEBUG rebuild items (old %u, %u -> new %u, %u)' % tuple(list(old) + list(new)))
-
-    # remove the values from the current target
-    def flush(self):
-        if self._target==None:
-            return
-        if self.source_idx in self._items_per_file:
-            print('DEBUG removing %u entries in %u locations' % self.llen(self._items_per_file[self.source_idx]));
-            self._items_per_file[self.source_idx] = {}
-
-    # add or update an item
-    def add(self, source, name, type, value, auto_value):
-        # print('%s: source=%s name=%s type=%s value=%s auto=%s' % (self.source_idx, source, name, type, value, auto_value))
-        if not self.source_idx in self._items_per_file:
-            self._items_per_file[self.source_idx] = {}
-        items = self._items_per_file[self.source_idx]
-
-        if name in items:
-            item = items[name]
-            # if item['type']!=type:
-            #     raise RuntimeError('invalid type %s!=%s' % (type, item['type']))
-            if item.name!=name:
-                raise RuntimeError('invalid name %s!=%s' % (name, item.name))
-            if item['value']==None:
-                if value!=None:
-                    item['value'] = value
-                    item['vdb'] = False
-            elif value!=None and item['value']!=value:
-                if item['vdb']==False:
-                    raise RuntimeError('invalid value %s!=%s' % (value, item['value']))
-                else:
-                    print("value of %s was modified" % (name))
-                    item['value'] = value
-                    item['vdb'] = False
-            if item['auto']==None:
-                if auto_value!=None:
-                    item['auto'] = auto_value
-                    item['adb'] = False
-            elif auto_value!=None and item['auto']!=auto_value:
-                if item['adb']==False:
-                    raise RuntimeError('invalid value %s!=%s' % (auto_value, item['auto']))
-                else:
-                    print("auto value of %s was modified" % (name))
-                    item['auto'] = auto_value
-                    item['adb'] = False
-            self.merge(item)
-        else:
-            items[name] = v2.Item(name, type, source, value, auto_value);
-            self.merge(items[name])
-
-    def item_location(self, item):
-        return '%s:%s' % (item['type'], item['source'])
-
-    # add items from preprocessor
-    def add_items(self, items):
-        if self._target==None:
-            return
-        for item in items:
-            self.add(item['source'], item['name'], DefinitionType.fromString(item['type']), item['value'], item['auto'])
-
-        self.write();
+class DatabaseOutputHelpers(object):
 
     # write locations
-    def write_locations(self, file: TextIOWrapper, item):
+    def write_locations(self, file: TextIOWrapper, item, indent=''):
         if self.config.locations_one_per_line:
-            file.write('//' + '\n//'.join(item.locations))
+            file.write('%s//' + ('\n%s//' % indent).join(indent, item.locations))
         else:
-            file.write('// %s\n' % ', '.join(item.locations))
+            file.write('%s// %s\n' % (indent, ', '.join(item.locations)))
 
     def beautify(name):
         name = name.replace('_', ' ')
@@ -540,18 +142,334 @@ class Database(object):
     def get_static_items(self):
         return self.get_items(True)
 
-    # write defintion string
-    def write_define(self, file: TextIOWrapper, item):
-        lang = 'default'
-        if item['value']!=None:
-            value = item['value']
-        elif item['auto']!=None:
-            value = item['auto']
-            lang += ' (auto)'
-        else:
-            value = Database.beautify(item['name'])
-            lang += ' (auto)'
+    # encode binary data into hexadecimal string
+    def encode_binary(s: str):
+        bytes = s.encode('ascii', errors='backslashreplace')
+        out = ''
+        for byte in bytes:
+            if byte&0x80:
+                out += '\\x%02x' % byte
+            else:
+                out += chr(byte)
+        return out
 
+    def create_define(self, item):
+        try:
+            ascii_str = DatabaseOutputHelpers.encode_binary(item.value)
+        except UnicodeEncodeError as e:
+            self.add_error('failed to encode string', item=item, fatal=True)
+
+        s = '(%s, "%s");' % (item.name, DatabaseOutputHelpers.split_hex(ascii_str))
+        return s
+
+    # write definition string
+    def write_define(self, file: TextIOWrapper, item: v2.Item):
+        lang = 'default'
+        if not item.has_value:
+            lang += ' (auto)'
         self.write_locations(file, item)
-        file.write('PROGMEM_STRING_DEF(%s, "%s"); // %s\n' % (item.name, Database.split_hex(value), lang))
+        print('%-160.65535s // %s' % ('PROGMEM_STRING_DEF' + self.create_define(item), lang), file=file)
+
+    # write auto definition
+    def write_auto_init(self, file: TextIOWrapper, item: v2.Item):
+        if item['value']!=None:
+            raise RuntimeError('value expected to be None')
+        indent = 4*' '
+        self.write_locations(file, item, indent)
+        print('%sAUTO_STRING_DEF%s' % (indent, self.create_define(item)), file=file)
+
+
+class Database(DatabaseOutputHelpers):
+    def __init__(self, generator, target):
+
+        self._generator = generator
+
+        # list of errors during generating
+        self._errors = []
+
+        # output directory
+        self._dir = path.abspath(self.config.build_database_dir);
+
+        # human readable version of the database fopr debugging
+        self._json_file = path.join(self._dir, '_debug.json');
+
+        # lock for the database files
+        self._lock = threading.Lock()
+
+        # all values by name
+        self._values = {}
+        # all items with a defined value
+        self._defined = {}
+        # all items that belong to a target, usually a C file
+        self._items_per_file = {}
+        # list of targets and dependecies
+        self._targets = {}
+
+        def make_unsigned_hex64(val):
+            if val<0:
+                val = (1 << 63) + val
+                return 'f' + ('%016x' % val)[1:]
+            return '%016x' % val
+
+
+        # hash target and sources to identify in database
+        self._target = target;
+        targets = []
+        for node in self._target:
+            targets.append(node.get_path())
+        self._targets_hash = hash(','.join(targets))
+        self._target_idx = make_unsigned_hex64(self._targets_hash)
+
+        # self._sources_hash = None
+        # self._target_hash = None
+        # if target!=None:
+        #     targets = []
+        #     sources = []
+        #     for node in self._target:
+        #         targets.append(node.get_path())
+        #         sources.append(node.srcnode().get_path())
+        #     self._sources_hash = hash(','.join(sources))
+        #     self._target_idx = make_unsigned_hex64(self._source_hash)
+        #     self._targets_hash = make_unsigned_hex64(hash(','.join(targets)))
+
+    @property
+    def config(self):
+        return self._generator.config
+
+    def get_target(self):
+        if not self._target_idx in self._targets:
+            self._targets[self._target_idx] = {
+                'files': [],
+                'hash': None
+            }
+        return self._targets[self._target_idx]
+
+    def add_target_files(self, files, hash):
+        self._targets[self._target_idx] = {
+            'files': files,
+            'hash': hash
+        }
+
+    # create a sorted list of all stored locations
+    def get_locations(self, find_item):
+        locations = []
+        if find_item.name in self._defined:
+            locations.append(self._defined[find_item.name].location)
+
+        # for item in self._defined.values():
+        #     if find_item.name==item.name:
+        #         locations.append(item.location)
+
+        for items in self._items_per_file.values():
+            # if find_item.index in items:
+            #     locations.append(items[find_item.index].location)
+            for item in items.values():
+                if find_item.name==item.name:
+                    locations.append(item.location)
+        locations = sorted(list(set(locations)), key=lambda val: val)
+        return locations
+
+    def get_value(self, item, name):
+        if name in self._values:
+            return self._values[name]
+        return None
+
+    def set_value(self, item, name, value):
+        if name in self._values:
+            if value!=self._values[name]:
+                self.add_error('cannot redefine different value: %s!=%s' % (name, value, self._values[name]), item=item)
+        if value==None:
+            return False
+        self._values[name] = value
+        return True
+
+    def add_error(self, msg, item=None, item2=None, fatal=False):
+        if item:
+            msg += '\nitem name: %s source: %s' % (item.name, item['source'])
+            if item.has_value:
+                msg += ' value: "%s"' % item['value']
+        if item2:
+            msg += '\nitem name: %s source: %s' % (item2.name, item2['source'])
+        self._errors.append(msg)
+        if fatal:
+            self.print_errors()
+            self._generator._env.Exit(1)
+
+    def print_errors(self):
+        for error in self._errors:
+            print(error, file=sys.stderr)
+            print('', file=sys.stderr)
+
+    def _add_extension(self, file):
+        if self.config.build_database_compression == CompressionType.LZMA:
+            file += '.xz'
+        return file
+
+    # create a human readable version of the database for debugging
+    def write_json(self):
+
+        os.makedirs(self._dir, exist_ok=True)
+
+        tmp = {
+            'defined': {},
+            'unique': {},
+            'targets': self._targets
+        }
+        for target_idx, items in self._items_per_file.items():
+            tmp[target_idx] = {}
+            for index, item in items.items():
+                item_out = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value']}
+                if not item.name in tmp['unique']:
+                    tmp['unique'][item.name] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'locations': str(item.locations)}
+                tmp[target_idx][index] = item_out
+        if self._defined:
+            for index, item in self._defined.items():
+                tmp['defined'][index] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value']}
+                if not item.name in tmp['unique']:
+                    tmp['unique'][item.name] = {'name': item['name'], 'source': item['source'], 'type': str(item['type']), 'value': item['value'], 'locations': str(item.locations)}
+
+        with open(self._json_file, 'wt') as file:
+            file.write(json.dumps(tmp, indent=2))
+
+    # assign self to _database of each item
+    def _update_items(self, items: dict):
+        for item in items.values():
+            item._database = self
+
+    # load database from file if it is exists
+    def _read(self, filename):
+        if not path.isfile(filename):
+            return {'defined': {}, 'targets': {}, 'items': {}}
+
+        file = FileWrapper.open(filename, 'rb')
+        try:
+            database = pickle.load(file)
+        finally:
+            file.close()
+
+        return database
+
+    # write database to file
+    def _write(self, filename, database: dict):
+
+        file = FileWrapper.open(filename, 'wb')
+        try:
+            pickle.dump(database, file)
+        finally:
+            file.close()
+
+    # read database
+    def read(self):
+
+        if not self._lock.acquire(True, 60.0):
+            self.add_error('failed to acquire database read lock', fatal=True)
+        try:
+
+            file = self._add_extension(path.join(self._dir, 'database.pickle'))
+            database = self._read(file)
+            self._targets = database['targets']
+            self._defined = database['defined']
+            self._items_per_file = database['items']
+
+            self._update_items(self._defined)
+            for items in self._items_per_file.values():
+                self._update_items(items)
+        finally:
+            self._lock.release();
+
+    # write database
+    def write(self):
+
+        if not self._lock.acquire(True, 60.0):
+            self.add_error('failed to acquire database write lock', fatal=True)
+        try:
+
+            os.makedirs(self._dir, exist_ok=True)
+            file = self._add_extension(path.join(self._dir, 'database.pickle'))
+
+            merged_database = self._read(file)
+            merged_database['targets'].update(self._targets)
+            merged_database['defined'].update(self._defined)
+            if self._target_idx in self._items_per_file:
+                merged_database['items'].update({self._target_idx: self._items_per_file[self._target_idx]})
+            self._update_items(merged_database['defined'])
+            for items in merged_database['items'].values():
+                self._update_items(items)
+            self._write(file, merged_database)
+
+            self.write_json()
+
+        finally:
+            self._lock.release()
+
+    # returns True for items that are statically defined
+    def is_static(self, find_item):
+        if find_item['type']==DefinitionType.DEFINE:
+            return True
+
+        for items in self._items_per_file.values():
+            for item in items.values():
+                if item['type']==DefinitionType.DEFINE and find_item['name']==item['name']:
+                    if self.is_static_old(item)!=True:#DEBUG
+                        raise RuntimeError('is_static error')#DEBUG
+                    return True
+
+        if self.is_static_old(find_item)!=False:#DEBUG
+            raise RuntimeError('is_static error')#DEBUG
+        return False
+
+    def is_static_old(self, item):#DEBUG REMOVE
+        if item['type']==DefinitionType.DEFINE:
+            return True
+        for loc in item.locations:
+            if loc.startswith('PROGMEM_STRING_DEF:'):
+                return True
+        return False
+
+    # returns True if the item is currently in use
+    def is_used(self, find_item):
+        for items in self._items_per_file.values():
+            for item in items.values():
+                if item['type']==DefinitionType.SPGM and item.name==find_item.name:
+                    return True
+        return False
+
+    # remove the values from the current target
+    def flush(self):
+        if self._target_idx in self._items_per_file:
+            self._items_per_file[self._target_idx] = {}
+
+    # add or update an item
+    def add(self, source, name, type, value, data):
+        # print('%s: source=%s name=%s type=%s value=%s' % (self._target_idx, source, name, type, value))
+
+        # create dict for this target if it does not exist
+        if not self._target_idx in self._items_per_file:
+            self._items_per_file[self._target_idx] = {}
+        items = self._items_per_file[self._target_idx]
+
+        # check if item already exists
+        new_item = v2.Item(name, type, source, value, data);
+        new_item._database = self
+        if new_item.index in items:
+            self.add_error('item already exists. currently only one item per line may exist', item=new_item, fatal=True) #TODO fix issue
+
+        # add item
+        items[new_item.index] = new_item
+
+        # add item to defined items if it has a value
+        if new_item['value']!=None:
+            if new_item.name in self._defined:
+                if self._defined[new_item.name]['value']!=new_item['value']:
+                    self.add_error('cannot redefine different value: %s!=%s' % (new_item['value'], self._defined[new_item.name]['value']), item=new_item, item2=self._defined[new_item.name])
+            else:
+                self._defined[new_item.name] = new_item
+
+    # add items from preprocessor
+    def add_items(self, items):
+        for item in items:
+            self.add(item['source'], item['name'], item['type'], item['value'], item['data'])
+
+        # rewrite database
+        self.write();
 

@@ -5,6 +5,11 @@
 - New database (work in progress)
 - Removed json database. Everything can be defined in source code.
 - Run preprocessor as external process to avoid blocking PIO
+- Added a list of depedencies to check for changes to avoid running the preprocessor every time
+- UTF8 support with hexadecimal encoding to avoid any issues with source code encodings
+- New error handling
+- Fixed requirements for definition file to compile last
+- Added column number to handle multiple items per line
 
 ## 0.1.1
 

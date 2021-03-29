@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Author: sascha_lammers@gmx.de
  */
 
@@ -59,12 +59,18 @@ void loop() {
     Serial.print(FSPGM(New_string_2));
     Serial.print(FSPGM(New_string_3));
     Serial.print(FSPGM(New_string));
-    Serial.print(FSPGM(new_string, "new string lowercase"));
     Serial.print(FSPGM(degree_celsius_utf8, "\xc2\xb0""C\xc2\xb0""F\xc2\xb0K"));
+    Serial.print(FSPGM(temperature, "23.5 \xc2\xb0" "C"));
+    Serial.print(FSPGM(temperature_utf8, "23.5 °C")); // since this file is utf8 encoded, it will produce the same string as the example above
+
+    Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2));
+
+
+
 
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
-    Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3) ));
+    Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3)));
 #if 0
     Serial.print(FSPGM(New_string_unused));
 #endif

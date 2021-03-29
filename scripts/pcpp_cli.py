@@ -40,6 +40,13 @@ def verbose(*vargs, **kwargs):
 
 config = json.loads(args.file.read())
 
+
+# if config['target']['files']:
+#     if get_hash(config['target']['files'])==config['target']['hash']:
+#         print('no changes detected')
+#         sys.exit(1)
+
+
 fcpp = SpgmPreprocessor()
 for define, value in config['defines']:
     verbose('define %s=%s' % (define, value))
@@ -83,7 +90,8 @@ for item in fcpp.items:
             'name': item.name,
             'type': str(location.definition_type),
             'value': item._value,
-            'auto': item._value
+            'auto': item._value,
+            'data': item._data
         }
         items.append(item_out)
 

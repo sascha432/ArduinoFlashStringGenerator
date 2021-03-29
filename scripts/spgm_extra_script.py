@@ -35,7 +35,7 @@ class SpgmExtraScript(object):
 
     def __init__(self):
         self.verbose = SpgmConfig._verbose
-        self.source_files = []
+        self._source_files = []
 
     #
     # Setup SPGM builder
@@ -50,6 +50,26 @@ class SpgmExtraScript(object):
                 SpgmConfig.debug('added include_dirs %s' % paths_added)
             else:
                 SpgmConfig.debug('project_src_dir %s is excluded, skipping include_dirs' % config.project_src_dir)
+    #
+    # install pcpp
+    #
+    def run_install_requirements(self, source, target, env):
+        # env.Execute("$PYTHONEXE -m pip install --upgrade pip")
+        env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
+
+        version = None
+        try:
+            from pcpp.preprocessor import Preprocessor, OutputDirective, Action
+            import pcpp
+            version = pcpp.__version__
+        except Exception as e:
+            SpgmConfig.box('Installation was not succesful. %s' % e, fg='red')
+            env.Exit(1)
+
+        if version=='1.22':
+            SpgmConfig.box('Requirements have been successfully installed', fg='green')
+        else:
+            SpgmConfig.box((('Requirements have been installed.', 'green'), ('Warning: version mismatch pcpp==%s not 1.22 - If any issues occur, try to install the correct version' % version, 'yellow')))
 
     #
     # register process nodes for all C/C++ source files
@@ -59,49 +79,45 @@ class SpgmExtraScript(object):
         def process_node(node: FS.File):
             if node:
                 file = node.srcnode().get_abspath()
-                # ignore declaration file to avoid a rebuild every time it is changed
-                if file==config.declaration_file:
-                    return None
+                # # # ignore declaration file to avoid a rebuild every time it is changed
+                # if file==config.declaration_file:
+                #     return None
+                if file==config.definition_file:
+                    self._auto_strings_target = node
+                    return node
                 for pattern in config.source_excludes:
                     if fnmatch.fnmatch(file, pattern):
                         return node
-                self.source_files.append(node)
+                self._source_files.append(node)
                 return node
             return None
 
         for suffix in ['c', 'C', 'cc', 'cpp', 'ino', 'INO']:
             env.AddBuildMiddleware(process_node, '*.' + suffix)
 
-
-        def print_all(node):
-            rel_path = node.get_abspath()
-            if rel_path.startswith(config.project_dir):
-                rel_path = rel_path[len(config.project_dir) + 1:]
-
-            SpgmConfig.debug('Node %s' % (rel_path))
-            return node
-
-        # if SpgmConfig._debug:
-        #     env.AddBuildMiddleware(print_all)
-
-
     #
     # add all PreActions for source and binary
     #
     def add_pre_actions(self, env):
         SpgmConfig.debug('spgm_extra_script.add_pre_actions', True)
-        for source in self.source_files:
-            env.AddPreAction(source.get_path() + '.o', self.run_spgm_generator)
-        env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
+        if self._source_files:
+            for node in self._source_files:
+                # add pre actions for every target to be scanned
+                env.AddPreAction(node.get_path() + '.o', self.run_spgm_generator)
+                # add all source files to the requirements of the definition file
+                # to compile it after collection all strings
+                env.Requires(self._auto_strings_target.get_path() + '.o', node.get_path() + '.o')
 
-    #
-    # force rebuild of mainprog
-    #
-    def run_mainprog(self, target, source, env):
-        config = SpgmConfig(env)
-        # append new line to change file modification time and hash
-        with open(config.definition_file, 'at') as file:
-            file.write('\n')
+        # env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
+
+    # #
+    # # force rebuild of mainprog
+    # #
+    # def run_mainprog(self, target, source, env):
+    #     config = SpgmConfig(env)
+    #     # append new line to change file modification time and hash
+    #     with open(config.definition_file, 'at') as file:
+    #         file.write('\n')
 
     #
     # Run SPGM generator on given target
@@ -129,14 +145,13 @@ class SpgmExtraScript(object):
 
         # create generator
         SpgmConfig.debug('creating generator object', True)
-        gen = Generator(config, files, target)
-        gen._database.flush()
+        gen = Generator(config, files, target, env)
         gen.language = config.output_language
 
 
         # create config preprocessor
         data = {
-            # 'target': gen._database.get_target(),
+            'target': gen._database.get_target(),
             'files': gen.files,
             'defines': config.defines,
             'pcpp_defines': config.pcpp_defines,
@@ -173,6 +188,8 @@ class SpgmExtraScript(object):
             # output['files_hash']: hash of processed files to detect changes
             # output['items']: items found in the files
 
+            gen._database.add_target_files(output['files'], output['files_hash'])
+
             gen.copy_to_database(output['items'])
             SpgmConfig.debug('creating output files', True)
 
@@ -188,35 +205,13 @@ class SpgmExtraScript(object):
 
             gen.create_output_header(config.declaration_file, config.declaration_include_file)
             gen.create_output_define(config.definition_file)
-
-            # gen.create_output_static(args.output_static)
-            # gen.create_output_auto(args.output_auto)
+            gen.create_output_static(config.statics_file)
+            gen.create_output_auto_defined(config.auto_defined_file)
 
             SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
 
         finally:
             os.unlink(tmpfile);
-
-    #
-    # install pcpp
-    #
-    def run_install_requirements(self, source, target, env):
-        # env.Execute("$PYTHONEXE -m pip install --upgrade pip")
-        env.Execute("$PYTHONEXE -m pip install pcpp==1.22")
-
-        version = None
-        try:
-            from pcpp.preprocessor import Preprocessor, OutputDirective, Action
-            import pcpp
-            version = pcpp.__version__
-        except Exception as e:
-            SpgmConfig.box('Installation was not succesful. %s' % e, fg='red')
-            env.Exit(1)
-
-        if version=='1.22':
-            SpgmConfig.box('Requirements have been successfully installed', fg='green')
-        else:
-            SpgmConfig.box((('Requirements have been installed.', 'green'), ('Warning: version mismatch pcpp==%s not 1.22 - If any issues occur, try to install the correct version' % version, 'yellow')))
 
 
     #
