@@ -8,3 +8,4 @@ src/generated/.flashstringgen
 src/generated/FlashStringGeneratorAuto.static.txt
 debug_args.txt
 output.txt
+x.txt

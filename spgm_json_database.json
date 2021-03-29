@@ -1,0 +1,137 @@
+// It is recommended to add strings to the source code using (F)SPGM, PROGMEM_STRING_DEF or AUTO_STRING_DEF instead of modifying this file
+{
+    "0": {
+        "default": "0",
+        "locations": "src/example.cpp:17 (DEFINE),src/example.cpp:65 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    },
+    "1": {
+        "default": "1",
+        "locations": "src/example.cpp:18 (DEFINE),src/example.cpp:66 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    },
+    "AutoInitExample": {
+        "default": "test default lang",
+        "i18n": {
+            "en_EN": "test en_EN",
+            "fr_FR": "fr_FR",
+            "it_IT": "tests it_IT"
+        },
+        "type": "source",
+        "use_counter": 0
+    },
+    "CURRENCY": {
+        "default": "%.2f",
+        "i18n": {
+            "bg;de": "%.2fEUR",
+            "en-US": "$%.2f",
+            "en_CA": "CA$%.2f",
+            "en_au": "AU$%.2f",
+            "fr;it;de;es": "%.2fEUR"
+        },
+        "locations": "src/example.cpp:73 (SPGM),src/example.cpp:74 (SPGM)",
+        "type": "source",
+        "use_counter": 2
+    },
+    "Example1": {
+        "default": "Example 1",
+        "locations": "src/example.cpp:13 (DEFINE),src/example.cpp:49 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    },
+    "Example2": {
+        "default": "Example 2",
+        "locations": "src/example.cpp:14 (DEFINE),src/example.cpp:51 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    },
+    "Example3": {
+        "default": "Inline Example 3",
+        "locations": "src/example.cpp:52 (SPGM),src/example.cpp:53 (SPGM)",
+        "type": "source",
+        "use_counter": 2
+    },
+    "IncludeTest": {
+        "default": "Include Test String",
+        "type": "source",
+        "use_counter": 0
+    },
+    "New_string": {
+        "auto": "New string",
+        "locations": "src/example.cpp:58 (SPGM),src/example.cpp:61 (SPGM)",
+        "type": "source",
+        "use_counter": 2
+    },
+    "New_string_2": {
+        "auto": "New string 2",
+        "locations": "src/example.cpp:59 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "New_string_3": {
+        "default": "My NEW String 3",
+        "locations": "src/example.cpp:60 (SPGM),src/example.cpp:67 (SPGM),src/example.cpp:71 (SPGM)",
+        "type": "source",
+        "use_counter": 3
+    },
+    "UnusedStaticExample": {
+        "default": "UnusedStaticExample",
+        "type": "source",
+        "use_counter": 0
+    },
+    "build_flags": {
+        "default": "Build Flags",
+        "locations": "src/example.cpp:54 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "degree_celsius_utf8": {
+        "default": "\\xc2\\xb0C\\xc2\\xb0F\\xc2\\xb0K",
+        "locations": "src/example.cpp:63 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "example_const_no_1": {
+        "default": "test \\\"escaped\\\" string",
+        "locations": "src/example.cpp:55 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "index_html": {
+        "default": "index.html",
+        "locations": "src/example.cpp:57 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "mime_type_text_html": {
+        "default": "text/html",
+        "locations": "src/example.cpp:16 (DEFINE),src/example.cpp:56 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    },
+    "new_string": {
+        "default": "new string lowercase",
+        "locations": "src/example.cpp:62 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "test_class_output": {
+        "default": "test class output",
+        "locations": "lib/test_lib/src/test_lib.cpp:7 (SPGM)",
+        "type": "source",
+        "use_counter": 1
+    },
+    "test_str": {
+        "default": "A test string",
+        "type": "source",
+        "use_counter": 0
+    },
+    "webui_json_type": {
+        "default": "type",
+        "locations": "src/example.cpp:42 (DEFINE),src/example.cpp:76 (SPGM)",
+        "type": "static",
+        "use_counter": 1
+    }
+}
