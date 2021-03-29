@@ -4,6 +4,7 @@
 
 from .types import DefinitionType, SourceType, ItemType
 from os import path
+import hashlib
 
 class Location(object):
     def __init__(self, source, lineno, definition_type='REMOVED', column=None):
@@ -105,7 +106,7 @@ class SourceLocation(object):
 
     @property
     def source_hash(self):
-        return hash(self.source_str)
+        return hashlib.md5(self.source_str.encode()).digest().hex()
 
     @property
     def source_str(self):

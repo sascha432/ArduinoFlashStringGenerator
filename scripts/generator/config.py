@@ -9,7 +9,10 @@ from typing import List, Tuple
 import fnmatch
 import enum
 import re
-import click
+try:
+    import click
+except:
+    pass
 import glob
 
 class SpgmConfig(SpgmCache):

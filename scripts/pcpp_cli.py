@@ -7,7 +7,6 @@ import json
 import sys
 import pickle
 from os import path
-import os
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
 except Exception as e:
@@ -30,15 +29,6 @@ class LexToken(object):
         if hasattr(tok, 'expanded_from'):
             self.expanded_from = getattr(tok, 'expanded_from')
 
-def get_hash(files):
-    hash_files = []
-    for file in files:
-        rfile = path.realpath(file)
-    st = os.stat(rfile)
-    hash_files.append({rfile: '%u,%u' % (st.st_size, st.st_mtime)});
-    hash_files.sort(reverse=False, key=lambda e: list(e)[0])
-    return hash(json.dumps(hash_files))
-
 parser = argparse.ArgumentParser(description='PCPP')
 parser.add_argument('--file', help="temporary file to exchange data", required=True, type=argparse.FileType('r+t'))
 parser.add_argument('--cache', help="temporary file to cache the preprocessor object", type=argparse.FileType('r+b'))
@@ -52,16 +42,12 @@ def verbose(*vargs, **kwargs):
 
 config = json.loads(args.file.read())
 
-# if config['target']['files']:
-#     if get_hash(config['target']['files'])==config['target']['hash']:
-#         print('no changes detected')
-#         sys.exit(1)
-
 try:
     fcpp = SpgmPreprocessor(args.info)
     data = pickle.load(args.cache)
     fcpp.include_once = data['include_once']
     fcpp.macros = data['macros']
+    verbose('cached macros: %u' % len(fcpp.macros))
 except EOFError as e:
     fcpp = SpgmPreprocessor(args.info)
 except Exception as e:
@@ -122,7 +108,6 @@ processed_files = sorted(fcpp.files)
 
 out = {
     'files': processed_files,
-    'files_hash': get_hash(processed_files),
     'items': items
 }
 
@@ -139,6 +124,8 @@ fcpp.cleanup()
 
 args.cache.seek(0)
 args.cache.truncate(0)
+
+verbose('storing %u macros in cache' % (len(fcpp.macros)))
 
 for key, macro in fcpp.macros.items():
     if macro.value!=None:

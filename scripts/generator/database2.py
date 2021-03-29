@@ -13,8 +13,10 @@ import json
 from os import path
 from .types import CompressionType, DefinitionType
 from .file_wrapper import FileWrapper
+from .config import SpgmConfig
 from io import TextIOWrapper
-from typing import  Dict
+from typing import Dict
+import hashlib
 
 class v2:
 
@@ -60,13 +62,14 @@ class v2:
             # unique key on c source file, line and name
             # in theory there could be multiple per line but the column is not stored
             id_str = ':'.join([self.__getitem__('source'), str(self.__getitem__('type')), self.name])
-            return hash(id_str)
+            return id_str
+            # return hashlib.md5(id_str.encode()).digest().hex()
 
         @property
         def value(self):
             value = self.__getitem__('value')
             if value==None:
-                value = DatabaseOutputHelpers.beautify(self.name)
+                value = DatabaseHelpers.beautify(self.name)
             return value
 
         @property
@@ -117,7 +120,7 @@ class v2:
 
 
 
-class DatabaseOutputHelpers(object):
+class DatabaseHelpers(object):
 
     # write locations
     def write_locations(self, file: TextIOWrapper, item, indent=''):
@@ -125,6 +128,39 @@ class DatabaseOutputHelpers(object):
             file.write('%s//' + ('\n%s//' % indent).join(indent, item.locations))
         else:
             file.write('%s// %s\n' % (indent, ', '.join(item.locations)))
+
+    def acquire_lock(database, lock, timeout):
+        if lock==None:
+            return
+        timeout = time.monotonic() + timeout
+        while True:
+            # print('waiting for lock %u. target=%s timeout=%u' % (id(lock), database._target, timeout - time.monotonic()))
+            if lock.acquire(True, 5.0):
+                break
+            if time.monotonic()>timeout:
+                database.add_error('cannot lock thread: timeout', fatal=True)
+        # print('got lock %u. target=%s' % (id(lock), database._target))
+
+    def release_lock(database, lock):
+        if lock==None:
+            return
+        # print('releasing lock %u. target=%s' % (id(lock), database._target))
+        lock.release()
+
+    # create md5 hash for a list of files
+    # size and modificaton time is used to detect changes
+    def get_hash(files):
+        hash_files = []
+        for file in files:
+            file = path.realpath(file)
+            if path.isfile(file):
+                st = os.stat(file)
+                file += (',%u,%u' % (st.st_size, st.st_mtime))
+            else:
+                file += ',-,-'
+            hash_files.append(file);
+        hash_files.sort()
+        return hashlib.md5(json.dumps(hash_files).encode()).digest().hex()
 
     def beautify(name):
         name = name.replace('_', ' ')
@@ -171,11 +207,11 @@ class DatabaseOutputHelpers(object):
 
     def create_define(self, item):
         try:
-            ascii_str = DatabaseOutputHelpers.encode_binary(item.value)
+            ascii_str = DatabaseHelpers.encode_binary(item.value)
         except UnicodeEncodeError as e:
             self.add_error('failed to encode string', item=item, fatal=True)
 
-        s = '(%s, "%s");' % (item.name, DatabaseOutputHelpers.split_hex(ascii_str))
+        s = '(%s, "%s");' % (item.name, DatabaseHelpers.split_hex(ascii_str))
         return s
 
     # write definition string
@@ -184,10 +220,11 @@ class DatabaseOutputHelpers(object):
         if static:
             print('%s%s' % ('PROGMEM_STRING_DEF', self.create_define(item)), file=file)
         else:
-            lang = 'default'
+            lang = 'language: default'
             if not item.has_value:
-                lang += ' (auto)'
-            print('%-160.65535s // %s' % ('PROGMEM_STRING_DEF' + self.create_define(item), lang), file=file)
+                lang += ' (auto value)'
+            print('// %s' % lang, file=file)
+            print('%s%s' % ('PROGMEM_STRING_DEF', self.create_define(item)), file=file)
 
     # write auto definition
     def write_auto_init(self, file: TextIOWrapper, item: v2.Item):
@@ -198,7 +235,7 @@ class DatabaseOutputHelpers(object):
         print('%sAUTO_STRING_DEF%s' % (indent, self.create_define(item)), file=file)
 
 
-class Database(DatabaseOutputHelpers):
+class Database(DatabaseHelpers):
     def __init__(self, generator, target):
 
         self._generator = generator
@@ -213,7 +250,7 @@ class Database(DatabaseOutputHelpers):
         self._json_file = path.join(self._dir, '_debug.json');
 
         # lock for the database files
-        self._lock = threading.BoundedSemaphore()
+        self._lock = None #threading.Lock()
 
         # all values by name
         self._values = {}
@@ -224,32 +261,13 @@ class Database(DatabaseOutputHelpers):
         # list of targets and dependecies
         self._targets = {}
 
-        def make_unsigned_hex64(val):
-            if val<0:
-                val = (1 << 63) + val
-                return 'f' + ('%016x' % val)[1:]
-            return '%016x' % val
-
-
         # hash target and sources to identify in database
         self._target = target;
         targets = []
         for node in self._target:
             targets.append(node.get_path())
-        self._targets_hash = hash(','.join(targets))
-        self._target_idx = make_unsigned_hex64(self._targets_hash)
-
-        # self._sources_hash = None
-        # self._target_hash = None
-        # if target!=None:
-        #     targets = []
-        #     sources = []
-        #     for node in self._target:
-        #         targets.append(node.get_path())
-        #         sources.append(node.srcnode().get_path())
-        #     self._sources_hash = hash(','.join(sources))
-        #     self._target_idx = make_unsigned_hex64(self._source_hash)
-        #     self._targets_hash = make_unsigned_hex64(hash(','.join(targets)))
+        # self._target_idx = hashlib.md5((','.join(targets)).encode()).digest().hex()
+        self._target_idx = (','.join(targets))
 
     @property
     def config(self):
@@ -296,7 +314,7 @@ class Database(DatabaseOutputHelpers):
     def set_value(self, item, name, value):
         if name in self._values:
             if value!=self._values[name]:
-                self.add_error('cannot redefine different value: %s!=%s' % (name, value, self._values[name]), item=item)
+                self.add_error('cannot redefine different value: %s!=%s' % (value, self._values[name]), item=item)
         if value==None:
             return False
         self._values[name] = value
@@ -380,8 +398,7 @@ class Database(DatabaseOutputHelpers):
     # read database
     def read(self):
 
-        if not self._lock.acquire(True, 60.0):
-            self.add_error('failed to acquire database read lock', fatal=True)
+        DatabaseHelpers.acquire_lock(self, self._lock, 60)
         try:
 
             file = self._add_extension(path.join(self._dir, 'database.pickle'))
@@ -394,13 +411,12 @@ class Database(DatabaseOutputHelpers):
             for items in self._items_per_file.values():
                 self._update_items(items)
         finally:
-            self._lock.release();
+            DatabaseHelpers.release_lock(self, self._lock)
 
     # write database
     def write(self):
 
-        if not self._lock.acquire(True, 60.0):
-            self.add_error('failed to acquire database write lock', fatal=True)
+        DatabaseHelpers.acquire_lock(self, self._lock, 60)
         try:
 
             os.makedirs(self._dir, exist_ok=True)
@@ -419,7 +435,7 @@ class Database(DatabaseOutputHelpers):
             self.write_json()
 
         finally:
-            self._lock.release()
+            DatabaseHelpers.release_lock(self, self._lock)
 
     # returns True for items that are statically defined
     def is_static(self, find_item):

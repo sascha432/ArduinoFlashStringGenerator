@@ -48,6 +48,7 @@ class Generator(object):
         self._files = files
         self._language = {'default': 'default'} # type: Dict[str, List[str]]
         self._database = Database(self, target)
+        self._database._target = target[0].get_path()
 
 
     def read_database(self):

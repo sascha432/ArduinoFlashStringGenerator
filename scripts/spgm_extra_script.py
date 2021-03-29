@@ -13,17 +13,15 @@ import sys
 import tempfile
 import subprocess
 import fnmatch
-from generator import ExportType, ItemType, SpgmConfig, Item, Generator, SpgmPreprocessor
+from generator import SpgmConfig,  Generator, DatabaseHelpers
 import threading
 import generator
-from typing import List
-from pathlib import Path
-import pickle
 import atexit
 import json
 import tempfile
 import time
 import click
+import hashlib
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
@@ -32,14 +30,29 @@ class SpgmExtraScript(object):
 
     temporary_files = []
 
+    # add file to list of temporary files to be deleted up on exit
     def temporary_files_add(file):
         if file in SpgmExtraScript.temporary_files:
             return
         SpgmExtraScript.temporary_files.append(file)
 
+    # remove file from list of temporary files
     def temporary_files_remove(file):
         if file in SpgmExtraScript.temporary_files:
             SpgmExtraScript.temporary_files.remove(file)
+
+    # remove file from list of temporary files and delete file from disk
+    # the file is deleted even if not in the list
+    def temporary_files_unlink(file):
+        if file==None:
+            return
+        if file in SpgmExtraScript.temporary_files:
+            SpgmExtraScript.temporary_files.remove(file)
+        try:
+            if path.isfile(file):
+                os.unlink(file)
+        except Exception as e:
+            print('Exception %s' % e)
 
     def exit_handler():
         for file in SpgmExtraScript.temporary_files:
@@ -52,7 +65,8 @@ class SpgmExtraScript(object):
     def __init__(self):
         self.verbose = SpgmConfig._verbose
         self._source_files = []
-        self._lock = threading.BoundedSemaphore()
+        # self._read_lock = threading.Lock()
+        self._write_lock = threading.BoundedSemaphore()
         self._pcpp_cache = None
         atexit.register(SpgmExtraScript.exit_handler)
 
@@ -162,128 +176,171 @@ class SpgmExtraScript(object):
         # create generator
         SpgmConfig.debug('creating generator object', True)
         gen = Generator(config, files, target, env)
+        self._target = gen._database._target#TODO REMOVE
 
-        # get a lock for reading the database and wait for any files being written
-        # the database has its own lock
-        if not self._lock.acquire(True, 60.0):
-            gen._database.add_error('cannot acquire lock for reading files')
+        DatabaseHelpers.acquire_lock(gen._database, self._write_lock, 3600)
         try:
             gen.read_database()
-        finally:
-            self._lock.release()
 
-        gen.language = config.output_language
+            # # get a read lock
+            # DatabaseHelpers.acquire_lock(gen._database, self._read_lock, 300)
+            # try:
+            #     gen.read_database()
+            # finally:
+            #     DatabaseHelpers.release_lock(self, self._read_lock)
 
-        # create config preprocessor
-        data = {
-            'target': gen._database.get_target(),
-            'files': gen.files,
-            'defines': config.defines,
-            'pcpp_defines': config.pcpp_defines,
-            'include_dirs': config.include_dirs,
-            'skip_includes': config.skip_includes
-        }
+            gen.language = config.output_language
 
-        try:
-            tmpfile = None
-            cachefile = None
+            # create config preprocessor
+            data = {
+                'target': gen._database.get_target(),
+                'files': gen.files,
+                'defines': config.defines,
+                'pcpp_defines': config.pcpp_defines,
+                'include_dirs': config.include_dirs,
+                'skip_includes': config.skip_includes
+            }
 
-            if self._pcpp_cache==None:
-                with tempfile.NamedTemporaryFile('wb', delete=False) as file:
-                    cachefile = file.name
-                    SpgmExtraScript.temporary_files_add(cachefile)
+            if DatabaseHelpers.get_hash(data['target']['files'])==data['target']['hash']:
+                SpgmConfig.verbose('no changes detected')
             else:
-                cachefile = self._pcpp_cache
-
-            with tempfile.NamedTemporaryFile('wt', delete=False) as file:
-                file.write(json.dumps(data))
-                tmpfile = file.name
-                SpgmExtraScript.temporary_files_add(tmpfile)
-
-            args = config.pcpp_bin.split(' ')
-            args += ['--file', tmpfile, '--cache', cachefile, '--info']
-            if SpgmConfig._verbose:
-                args.append('--verbose')
-                # display all output
-                proc = subprocess.Popen(args, text=True)
-                result = proc.wait(timeout=300)
-                errs = ''
-            else:
-                # collect stderr output and display on error
-                proc = subprocess.Popen(args, text=True, stderr=subprocess.PIPE)
-                outs, errs = proc.communicate(timeout=300)
-                result = proc.returncode
-
-            if result!=0:
-                time.sleep(1)
-                print(errs, file=sys.stderr)
-                raise RuntimeError('processor failed with exit code %u. cmd:\n%s\n' % (result, ' '.join(args)))
-
-            with open(tmpfile, 'rt') as file:
-                output = json.loads(file.read())
-
-            # output['files']: all files processed
-            # output['files_hash']: hash of processed files to detect changes
-            # output['items']: items found in the files
-
-            gen._database.add_target_files(output['files'], output['files_hash'])
-
-            # get a lock for updating files
-            if not self._lock.acquire(True, 60.0):
-                gen._database.add_error('cannot acquire lock for writing files')
-            try:
-
-                if self._pcpp_cache==None:
-                    # update our cache file
-                    self._pcpp_cache = cachefile
+                # DatabaseHelpers.acquire_lock(gen._database, self._write_lock, 300)
+                try:
+                    tmpfile = None
                     cachefile = None
-                elif cachefile==self._pcpp_cache:
-                    # do not delete our current cache
-                    cachefile = None
-                else:
-                    st1 = os.stat(cachefile)
-                    st2 = os.stat(self._pcpp_cache)
-                    if st1.st_mtime_ns>st2.st_mtime_ns:
-                        # the new cache is more recent
-                        try:
-                            if path.isfile(self._pcpp_cache):
-                                os.unlink(self._pcpp_cache)
-                            SpgmExtraScript.temporary_files_remove(self._pcpp_cache)
-                        except:
-                            pass
-                        self._pcpp_cache = cachefile
-                        cachefile = None
 
-                gen.copy_to_database(output['items'])
+                    if self._pcpp_cache==None:
+                        with tempfile.NamedTemporaryFile('wb', delete=False) as file:
+                            cachefile = file.name
+                            SpgmExtraScript.temporary_files_add(cachefile)
+                    else:
+                        cachefile = self._pcpp_cache
 
-                SpgmConfig.debug('creating output files', True)
+                    with tempfile.NamedTemporaryFile('wt', delete=False) as file:
+                        file.write(json.dumps(data))
+                        tmpfile = file.name
+                        SpgmExtraScript.temporary_files_add(tmpfile)
 
-                num = len(output['items'])
-                include_counter = len(output['files'])
+                    args = config.pcpp_bin.split(' ')
+                    args += ['--file', tmpfile, '--cache', cachefile]
+                    if SpgmConfig._verbose:
+                        args.append('--verbose')
+                        args.append('--info')
+                        # display all output
+                        proc = subprocess.Popen(args, text=True)
+                        result = proc.wait(timeout=300)
+                        errs = ''
+                    else:
+                        # collect stderr output and display on error
+                        proc = subprocess.Popen(args, stderr=subprocess.PIPE)
+                        outs, errs = proc.communicate(timeout=300)
+                        result = proc.returncode
 
-                SpgmConfig.debug('output_language %s' % gen.language)
-                SpgmConfig.debug('declaration_file %s' % config.declaration_file)
-                SpgmConfig.debug('definition_file %s' % config.definition_file)
-                SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
+                    if result!=0:
+                        time.sleep(1)
+                        print(errs, file=sys.stderr)
+                        raise RuntimeError('processor failed with exit code %u. cmd:\n%s\n' % (result, ' '.join(args)))
 
-                # create output files
+                    with open(tmpfile, 'rt') as file:
+                        output = json.loads(file.read())
 
-                gen.create_output_header(config.declaration_file, config.declaration_include_file)
-                gen.create_output_define(config.definition_file)
-                gen.create_output_static(config.statics_file)
-                gen.create_output_auto_defined(config.auto_defined_file)
+                    # output['files']: all files processed
+                    # output['items']: items found in the files
 
-                SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
-            finally:
-                self._lock.release()
+                    gen._database.add_target_files(output['files'], DatabaseHelpers.get_hash(output['files']))
+
+                    # get a lock for updating files
+                    # DatabaseHelpers.acquire_lock(gen._database, self._write_lock, 300)
+                    try:
+                        if self._pcpp_cache==None:
+                            # update our cache file
+                            self._pcpp_cache = cachefile
+                            cachefile = None
+                        elif cachefile==self._pcpp_cache:
+                            # do not delete our current cache
+                            cachefile = None
+                        else:
+                            st1 = os.stat(cachefile)
+                            st2 = os.stat(self._pcpp_cache)
+                            if st1.st_mtime_ns>st2.st_mtime_ns:
+                                # the new cache is more recent
+                                SpgmExtraScript.temporary_files_unlink(self._pcpp_cache)
+                                self._pcpp_cache = cachefile
+                                cachefile = None
+
+                        gen.copy_to_database(output['items'])
+
+                        SpgmConfig.debug('creating output files', True)
+
+                        num = len(output['items'])
+                        include_counter = len(output['files'])
+
+                        SpgmConfig.debug('output_language %s' % gen.language)
+                        SpgmConfig.debug('declaration_file %s' % config.declaration_file)
+                        SpgmConfig.debug('definition_file %s' % config.definition_file)
+                        SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
+
+                        # create output files
+
+                        def get_tmp():
+                            with tempfile.NamedTemporaryFile('wt', delete=False) as file:
+                                SpgmExtraScript.temporary_files_add(file.name)
+                                return file.name
+
+                        # compare contents and discard tmp file if the same
+                        def compare_move_tmpfile(tmp, out):
+                            # print('move %s -> %s' % (tmp, out))
+                            try:
+                                if not path.isfile(out):
+                                    os.renames(tmp, out)
+                                    return
+                                with open(tmp, 'rb') as file:
+                                    hash1 = hashlib.md5(file.read()).digest()
+                                with open(out, 'rb') as file:
+                                    hash2 = hashlib.md5(file.read()).digest()
+                                if hash1==hash2:
+                                    return
+                                try:
+                                    os.unlink(out)
+                                except:
+                                    pass
+                                os.renames(tmp, out)
+                            finally:
+                                SpgmExtraScript.temporary_files_unlink(tmp)
+
+                        tmp1 = get_tmp()
+                        gen.create_output_header(tmp1, config.declaration_include_file)
+                        compare_move_tmpfile(tmp1, config.declaration_file)
+
+                        tmp1 = get_tmp()
+                        gen.create_output_define(tmp1)
+                        compare_move_tmpfile(tmp1, config.definition_file)
+
+                        tmp1 = get_tmp()
+                        gen.create_output_static(tmp1)
+                        compare_move_tmpfile(tmp1, config.statics_file)
+
+                        tmp1 = get_tmp()
+                        gen.create_output_auto_defined(tmp1)
+                        compare_move_tmpfile(tmp1, config.auto_defined_file)
+
+                        # gen.create_output_header(config.declaration_file, config.declaration_include_file)
+                        # gen.create_output_define(config.definition_file)
+                        # gen.create_output_static(config.statics_file)
+                        # gen.create_output_auto_defined(config.auto_defined_file)
+
+                        SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
+
+                    finally:
+                        # DatabaseHelpers.release_lock(self, self._write_lock)
+                        pass
+
+                finally:
+                    SpgmExtraScript.temporary_files_unlink(tmpfile)
+                    SpgmExtraScript.temporary_files_unlink(cachefile)
 
         finally:
-            if tmpfile:
-                os.unlink(tmpfile);
-                SpgmExtraScript.temporary_files_remove(tmpfile)
-            if cachefile:
-                os.unlink(cachefile)
-                SpgmExtraScript.temporary_files_remove(cachefile)
+            DatabaseHelpers.release_lock(self, self._write_lock)
 
     #
     # run SPGM generator on target
