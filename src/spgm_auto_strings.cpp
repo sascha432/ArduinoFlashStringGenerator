@@ -13,7 +13,7 @@ PROGMEM_STRING_DEF(New_string, "New string");                                   
 // SPGM:src/example.cpp:59:18
 PROGMEM_STRING_DEF(New_string_2, "New string 2");                                                                                                                // default (auto)
 // SPGM:src/example.cpp:60:18, SPGM:src/example.cpp:70:18, SPGM:src/example.cpp:74:18
-PROGMEM_STRING_DEF(New_string_3, "New string 3");                                                                                                                // default (auto)
+PROGMEM_STRING_DEF(New_string_3, "My NEW String 3");                                                                                                             // default
 // SPGM:src/example.cpp:62:18
 PROGMEM_STRING_DEF(degree_celsius_utf8, "\xc2\xb0" "C\xc2\xb0" "F\xc2\xb0K");                                                                                    // default
 // SPGM:src/example.cpp:63:18

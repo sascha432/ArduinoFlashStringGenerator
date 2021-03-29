@@ -7,7 +7,7 @@ from .types import ExportType, SubstListType, SplitSepType, ItemType, Definition
 from .cache import SpgmCache
 from .config import SpgmConfig
 from .file_wrapper import FileWrapper
-from .database2 import v2, Database
+from .database2 import v2, Database, DatabaseOutputHelpers
 from .generator import Generator
 from .location import Location, SourceLocation
 from .i18n import i18n_config, i18n_lang, i18n

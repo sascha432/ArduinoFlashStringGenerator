@@ -104,6 +104,7 @@ class Generator(object):
         ]);
 
     # create declarations header
+    # default: spgm_auto_strings.h
     def create_output_header(self, filename, extra_includes=None):
         if extra_includes and isinstance(extra_includes, str):
             extra_includes = [extra_includes]
@@ -125,6 +126,7 @@ class Generator(object):
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
     # create defintions for the strings
+    # default: spgm_auto_strings.cpp
     def create_output_define(self, filename):
         try:
             with open(filename, 'wt') as file:
@@ -140,17 +142,19 @@ class Generator(object):
         return 0
 
     # create a list of statically defined strings
+    # default: spgm_static_strings.h
     def create_output_static(self, filename):
         try:
             with open(filename, 'wt') as file:
                 self.write_header_comment(file)
                 print('#include <spgm_string_generator.h>', file=file)
                 for item in self._database.get_static_items().values():
-                    self._database.write_define(file, item)
+                    self._database.write_define(file, item, True)
         except OSError as e:
             raise RuntimeError("cannot create %s: %s" % (filename, e))
 
     # create a list of automatically defined strings
+    # default: spgm_auto_defined.h
     def create_output_auto_defined(self, filename):
         try:
             with open(filename, 'wt') as file:

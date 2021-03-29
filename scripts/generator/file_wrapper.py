@@ -19,6 +19,13 @@ class FileWrapper(object):
         module = __import__(module)
         return FileWrapper(getattr(module, 'open')(filename, mode), filename, mode, True)
 
+    def __enter__(self):
+        return object.__getattribute__(self, '_file')
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+        return False
+
     @property
     def name(self):
         return object.__getattribute__(self, 'name')
