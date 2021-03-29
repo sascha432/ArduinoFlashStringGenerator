@@ -201,9 +201,15 @@ class SpgmExtraScript(object):
                 'skip_includes': config.skip_includes
             }
 
-            if DatabaseHelpers.get_hash(data['target']['files'])==data['target']['hash']:
-                SpgmConfig.verbose('no changes detected')
-            else:
+            # currently the scanner is using a cache that makes it impossible to collect all files
+            # included in a target. without the performance is extremly poor. a project that usually takes 7min to compile
+            # was still running after 2 hours... with cache it takes ~16min
+
+            # if DatabaseHelpers.get_hash(data['target']['files'])==data['target']['hash']:
+            #     SpgmConfig.verbose('no changes detected')
+            # else:
+
+            if True:
                 # DatabaseHelpers.acquire_lock(gen._database, self._write_lock, 300)
                 try:
                     tmpfile = None
