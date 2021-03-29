@@ -8,9 +8,11 @@ except:
     pass
 from SCons.Script.SConscript import SConsEnvironment
 from SCons.Script.SConscript import DefaultEnvironmentCall
+from SCons.Script import COMMAND_LINE_TARGETS
 from generator import SpgmConfig
 import generator
 import sys
+import click
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
@@ -22,21 +24,20 @@ spgm_extra_script = generator.get_spgm_extra_script() # type: SpgmExtraScript
 
 SpgmConfig.verbose('SPGM POSTSCRIPT', True)
 
-spgm_extra_script.add_pre_actions(env)
+spgm_extra_script.init_spgm_build(projenv)
+
+if not 'spgm_build' in COMMAND_LINE_TARGETS:
+    config = SpgmConfig(env)
+    auto_run = config.auto_run
+    if auto_run=='always':
+        SpgmConfig.verbose('SPGM generator auto run: always')
+        spgm_extra_script.add_pre_actions(env)
+    elif auto_run=='rebuild':
+        SpgmConfig.verbose('SPGM generator auto run: rebuild')
+        if config.is_clean or config.is_first_run:
+            spgm_extra_script.add_pre_actions(env)
+    else:
+        SpgmConfig.verbose('SPGM generator auto run: never')
 
 env.AlwaysBuild(env.Alias("spgm_install_requirements", None, spgm_extra_script.run_install_requirements))
-env.AlwaysBuild(env.Alias("spgm_build", None, spgm_extra_script.run_build_spgm))
-
-env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", spgm_extra_script.run_recompile_auto_strings)
-
-# def testx(name, target, soruce, env):
-#     print(name, target, source)
-
-# env.AddPreAction("upload", lambda target, source, env: testx('before_upload', target, source, env))
-# env.AddPostAction("upload", lambda target, source, env: testx('after_upload', target, source, env))
-# env.AddPreAction("buildprog", lambda target, source, env: testx('before_buildprog', target, source, env))
-# env.AddPostAction("buildprog", lambda target, source, env: testx('after_buildprog', target, source, env))
-
-# print(projenv.get("PIOBUILDFILES"))
-# print(projenv.Dump())
-
+env.AlwaysBuild(env.Alias("spgm_build", None, spgm_extra_script.run_spgm_build))

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Author: sascha_lammers@gmx.de
  */
 
@@ -7,6 +7,7 @@
 #include "test_lib.h"
 
 TestClass _test_class;
+
 
 // fixed definitions
 PROGMEM_STRING_DEF(Example1, "Example 1");
@@ -29,6 +30,17 @@ FLASH_STRING_GENERATOR_AUTO_INIT(
 #define ___STRINGIFY(...)                   #__VA_ARGS__
 #define NEW_STRING_3                        3
 
+using JsonString = String;
+
+#define J(str)                                  FSPGM(webui_json_##str)
+#define JJ(str)                                 JsonString(FSPGM(webui_json_##str))
+#define WEBUI_PROGMEM_STRING_DEF(str)           PROGMEM_STRING_DEF(webui_json_##str, _STRINGIFY(str))
+#define WEBUI_PROGMEM_STRING_DECL(str)          PROGMEM_STRING_DECL(webui_json_##str)
+
+
+WEBUI_PROGMEM_STRING_DECL(type);
+WEBUI_PROGMEM_STRING_DEF(type);
+
 void setup() {
     Serial.begin(115200);
 }
@@ -39,16 +51,23 @@ void loop() {
     Serial.print(FSPGM(Example2));
     Serial.print(FSPGM(Example3, "Inline Example 3"));
     Serial.print(FSPGM(Example3, "Inline Example 3")); // redefintion requires same value
+    Serial.print(FSPGM(build_flags, BUILD_FLAGS));
+    Serial.print(FSPGM(example_const_no_1, EXAMPLE_CONST_NO_1));
     Serial.print(FSPGM(mime_type_text_html));
     Serial.print(FSPGM(index_html, "index.html"));
     Serial.print(FSPGM(New_string));
     Serial.print(FSPGM(New_string_2));
     Serial.print(FSPGM(New_string_3));
     Serial.print(FSPGM(New_string));
-    Serial.print(FSPGM(new_string, "new string lowercase"));
+    Serial.print(FSPGM(degree_celsius_utf8, "\xc2\xb0""C\xc2\xb0""F\xc2\xb0K"));
+    Serial.print(FSPGM(temperature, "23.5 \xc2\xb0" "C"));
+    Serial.print(FSPGM(temperature_utf8, "23.5 °C")); // since this file is utf8 encoded, it will produce the same string as the example above
+
+    Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2)); Serial.print(SPGM(Example2));
+
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
-    Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3) ));
+    Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3)));
 #if 0
     Serial.print(FSPGM(New_string_unused));
 #endif
@@ -56,5 +75,9 @@ void loop() {
     char buffer[32];
     snprintf_P(buffer, sizeof(buffer), SPGM(CURRENCY, "%.2f", en-US:"$%.2f", en_CA:"CA$%.2f",en_au:"AU$%.2f",de;es;it;fr:"%.2fEUR"), 1.5);
     Serial.print(FSPGM(CURRENCY, "%.2f", de;bg: "%.2fEUR")); // redefintion merges translations
+
+    Serial.print(JJ(type));
+
     delay(1000);
 }
+

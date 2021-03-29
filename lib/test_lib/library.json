@@ -1,6 +1,6 @@
 {
-    "name": "ArduinoFlashStringGenerator",
-    "version": "0.1.1",
+    "name": "ArduinoFlashStringGenerator_test_lib",
+    "version": "0.0.1",
     "authors":
     {
       "name": "sascha lammers",
@@ -10,9 +10,11 @@
     "frameworks": "arduino",
     "platforms": ["atmelavr", "espressif8266", "espressif32"],
     "build": {
+        "includeDir": "./include",
         "srcFilter": [
-            "-<../src/>",
-            "-<../include/>"
+            "+<*>",
+            "-<.git/>",
+            "-<.svn/>"
         ]
     }
 }

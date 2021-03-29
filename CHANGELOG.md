@@ -1,9 +1,29 @@
 # Changelog
 
-## 0.1.0 (work-in-progress)
+## 0.1.2 (work-in-progress)
+
+- Removed json database. Everything can be defined in source code.
+- Run preprocessor as external process to avoid blocking PIO
+- Added a list of depedencies to check for changes to avoid running the preprocessor every time
+- UTF8 support with hexadecimal encoding to avoid any issues with source code encodings
+- New error handling
+- Fixed requirements for definition file to compile last
+- Added column number to handle multiple items per line
+
+## 0.1.1
+
+- New database format to run multiple processes in parallel
+- PlatformIO 5.0 support
+- Cache for configuration
+- Fixed exporting static defintion
+- Copying locations from build database to database
+- Added definition and declaration file to source_excludes/skip_includes
+
+## 0.1.0
 
 - Fully integrated into platformio as middleware
 - Standalone version has been removed
+- Incremental updates during complication
 
 ## 0.0.4
 

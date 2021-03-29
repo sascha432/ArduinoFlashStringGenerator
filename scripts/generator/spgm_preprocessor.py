@@ -5,9 +5,8 @@
 import sys
 import os
 import fnmatch
-from os import path
+from os import path, sep
 from . import Item
-from .config import SpgmConfig
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
 except Exception as e:
@@ -16,12 +15,12 @@ except Exception as e:
     print("Exception: %s" % e)
     print("Path: %s" % sys.path)
     print()
-    print("Run 'pio run -t spgm_generator_install_requirements' to install the requirements")
+    print("Run 'pio run -t spgm_install_requirements' to install the requirements")
     print()
     sys.exit(1)
 
 class SpgmPreprocessor(Preprocessor):
-    def __init__(self):
+    def __init__(self, display_info = True):
         Preprocessor.__init__(self)
         self.define("FLASH_STRINGS_AUTO_INIT 1")
         self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)")
@@ -30,8 +29,9 @@ class SpgmPreprocessor(Preprocessor):
         self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
         self._skip_includes = []
         self._items = []
-        self._include_counter = 0
-        self._include_once = []
+        # self._include_once = []
+        self._files = []
+        self._display_info = display_info
         # self.debugout = sys.stdout
 
     def add_skip_include(self, include):
@@ -96,15 +96,27 @@ class SpgmPreprocessor(Preprocessor):
 
     def on_file_open(self, is_system_include, includepath):
         if path.isfile(includepath):
-            if not os.path.isabs(includepath):
-                includepath = os.path.abspath(includepath)
+            includepath = os.path.abspath(includepath)
 
             for skip_include in self._skip_includes:
                 if fnmatch.fnmatch(includepath, skip_include):
-                    SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
+                    # SpgmConfig.debug('skip include %s pattern=%s' % (includepath, skip_include))
                     raise OutputDirective(Action.IgnoreAndPassThrough)
 
-        return Preprocessor.on_file_open(self, is_system_include, includepath)
+        # SpgmConfig.debug('pcpp %s' % includepath)
+
+        try:
+            result = Preprocessor.on_file_open(self, is_system_include, includepath)
+            if not includepath in self._files:
+                self._files.append(includepath)
+            if self._display_info:
+                # tmp = includepath.split(os.sep)
+                # if len(tmp)>4:
+                #     includepath = os.sep.join(tmp[-4:])
+                print('Preprocessing %s' % path.relpath(includepath))
+        except Exception as e:
+            raise e
+        return result
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
     #     print('******** on_directive_unknown')
@@ -126,6 +138,7 @@ class SpgmPreprocessor(Preprocessor):
 
     def find_strings(self, oh=sys.stdout):
         self.lineno = 0
+        self.column = 1
         self.source = None
         done = False
         blanklines = 0
@@ -194,10 +207,13 @@ class SpgmPreprocessor(Preprocessor):
                     while newlinesneeded > 0:
                         # oh.write('\n')
                         newlinesneeded -= 1
+            if self.lineno!=toks[0].lineno:
+                self.column = 1
             self.lineno = toks[0].lineno
             # Account for those newlines in a multiline comment
             if toks[0].type == self.t_COMMENT1:
                 self.lineno += toks[0].value.count('\n')
+                self.column = 1
             # if emitlinedirective and self.line_directive is not None:
             #     oh.write(self.line_directive + ' ' + str(self.lineno) + ('' if self.source is None else (' "' + self.source + '"' )) + '\n')
             blanklines = 0
@@ -206,12 +222,15 @@ class SpgmPreprocessor(Preprocessor):
                 if tok.type=='CPP_ID' and tok.value.startswith('__INTERNAL_') and tok.value.endswith('_FLASH_STRING_START'):
                     parts = tok.value.split('_', 4)
                     type = parts[3]=='AUTOINIT' and 'AUTO_INIT' or parts[3]
-                    item = Item(type, self.source, self.lineno, item=item)
+                    item = Item(type, self.source, self.lineno, item=item, column=self.column)
                 elif tok.type=='CPP_ID' and tok.value in('__INTERNAL_SPGM_FLASH_STRING_END','__INTERNAL_DEFINE_FLASH_STRING_END', '__INTERNAL_AUTOINIT_FLASH_STRING_END'):
-                    item = self.add_item(item)
+                    item = self.add_item(item, toks)
                 elif item!=None:
+                    self.column += len(tok.value)
                     if tok.type=='CPP_STRING':
                         item.append_value_buffer(tok.value[1:-1])
+                    elif (tok.type=='CPP_DOT' and tok.value=='=') or tok.type=='CPP_EQUAL':
+                        item.push_value()
                     elif (tok.type=='CPP_DOT' and tok.value==',') or tok.type=='CPP_COMMA':
                         item.push_value()
                     elif (tok.type=='CPP_DOT' and tok.value==':') or tok.type=='CPP_COLON':
@@ -221,13 +240,14 @@ class SpgmPreprocessor(Preprocessor):
                         item.append_value_buffer(tok.value)
                     elif tok.type=='CPP_STRING':
                         item.append_value_buffer(tok.value[1:-1])
+                else:
+                    self.column += len(tok.value)
 
 
                 if Item.DebugType.TOKEN in Item.DEBUG and item:
                     print("value=%s type=%s %s" % (tok.value, tok.type, item))
 
-    def add_item(self, item):
-        # push any text from buffer that is left
+    def add_item(self, item, toks):
         if item.has_value_buffer:
             item.push_value()
         item.validate()
@@ -238,3 +258,21 @@ class SpgmPreprocessor(Preprocessor):
     @property
     def items(self):
         return self._items
+
+    @property
+    def files(self):
+        return self._files
+
+    def cleanup(self):
+        self._items = []
+        self._files = []
+        try:
+            # these may not exist
+            del self.lineno
+            del self.column
+            del self.source
+        except:
+            pass
+
+    def __reduce__(self):
+        return (self.__class__, (self.include_once, self.macros))

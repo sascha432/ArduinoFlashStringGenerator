@@ -2,10 +2,12 @@
 tmp
 __pycache__
 .vscode
-src/generated/FlashStringGeneratorAuto.h
-src/generated/FlashStringGeneratorAuto.cpp
-src/generated/.flashstringgen
-src/generated/FlashStringGeneratorAuto.static.txt
+src/generated/*
 debug_args.txt
 output.txt
+include/spgm_auto_strings.h
+spgm_json_database.json
+*.bak
+src/spgm_auto_strings.cpp
+env.txt
 x.txt

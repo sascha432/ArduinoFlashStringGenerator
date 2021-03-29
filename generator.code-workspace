@@ -2,9 +2,18 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"path": "..\\..\\..\\..\\.platformio\\penv\\Lib\\site-packages\\pcpp"
 		}
-	]
+	],
+	"settings": {
+		"python.analysis.extraPaths": [
+			"C:/Users/sascha/Documents/PlatformIO/Projects/ArduinoFlashStringGenerator/scripts",
+			"C:/Users/sascha/.platformio/penv/lib/site-packages/platformio/builder",
+			"C:/Users/sascha/.platformio/packages",
+			"C:/Users/sascha/.platformio/packages/tool-scons/..",
+			"C:/Users/sascha/.platformio/packages/tool-scons/scons-local-4.0.1",
+			"C:/Users/sascha/.platformio/penv/Scripts/pio.exe",
+			"c:/users/sascha/.platformio/penv",
+			"c:/users/sascha/.platformio/penv/lib/site-packages"
+		]
+	}
 }
