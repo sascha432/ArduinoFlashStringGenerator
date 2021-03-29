@@ -1,8 +1,14 @@
 # Changelog
 
-## 0.1.1 (work-in-progress)
+## 0.1.2 (work-in-progress)
 
-- New database format to run multiple processes in parallel (work in progress; since python just uses one core, the preprocessor threads need to be spawned externally)
+- New database (work in progress)
+- Removed json database. Everything can be defined in source code.
+- Run preprocessor as external process to avoid blocking PIO
+
+## 0.1.1
+
+- New database format to run multiple processes in parallel
 - PlatformIO 5.0 support
 - Cache for configuration
 - Fixed exporting static defintion

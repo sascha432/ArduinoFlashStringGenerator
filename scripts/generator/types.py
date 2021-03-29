@@ -47,6 +47,16 @@ class DefinitionType(enum.Enum):
             return 'AUTO_STRING_DEF'
         return str(self.value).split('.')[-1]
 
+    def fromString(str):
+        if str=='PROGMEM_STRING_DEF':
+            return DefinitionType.DEFINE
+        if str=='AUTO_STRING_DEF':
+            return DefinitionType.AUTO_INIT
+        if str=='SPGM':
+            return DefinitionType.SPGM
+        return DefinitionType(str)
+
+
 class FilterType(enum.Enum):
     NO_MATCH = 'NO_MATCH'
     INCLUDE = 'INCLUDE'

@@ -7,7 +7,6 @@ import os
 import fnmatch
 from os import path
 from . import Item
-from .config import SpgmConfig
 try:
     from pcpp.preprocessor import Preprocessor, OutputDirective, Action
 except Exception as e:
@@ -33,6 +32,7 @@ class SpgmPreprocessor(Preprocessor):
         self._include_counter = 0
         self._include_once = []
         self._counter = 0
+        self._files = []
         # self.debugout = sys.stdout
 
     def add_skip_include(self, include):
@@ -107,7 +107,12 @@ class SpgmPreprocessor(Preprocessor):
         # SpgmConfig.debug('pcpp %s' % includepath)
 
         self._counter += 1
-        return Preprocessor.on_file_open(self, is_system_include, includepath)
+        try:
+            result = Preprocessor.on_file_open(self, is_system_include, includepath)
+            self._files.append(includepath)
+        except Exception as e:
+            raise e
+        return result
 
     # def on_directive_unknown(self,directive,toks,ifpassthru,precedingtoks):
     #     print('******** on_directive_unknown')

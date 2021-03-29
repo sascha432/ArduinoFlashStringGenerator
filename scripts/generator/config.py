@@ -49,7 +49,7 @@ class SpgmConfig(SpgmCache):
         elif SpgmConfig._verbose:
             SpgmConfig.verbose(msg, title)
 
-    def box(self, msgs, fg=None):
+    def box(msgs, fg=None):
         if isinstance(msgs, str):
             msgs = (msgs,)
         click.secho('-'*76)
@@ -182,10 +182,6 @@ class SpgmConfig(SpgmCache):
         raise RuntimeError('Invalid setting for custom_spgm_generator.auto_run: got %s: expected %s' % (auto_run, auto_run_options))
 
     @property
-    def is_clean(self):
-        return not path.isfile(self.json_build_database)
-
-    @property
     def is_first_run(self):
         return not (path.isfile(self.declaration_file) and path.isfile(self.definition_file))
 
@@ -206,14 +202,6 @@ class SpgmConfig(SpgmCache):
         return self.cache('build_database_dir', lambda: self._get_path('build_database_dir', '$BUILD_DIR/spgm'))
 
     @property
-    def json_build_database(self):
-        return self.cache('json_build_database', lambda: self._get_path('json_build_database', '$BUILD_DIR/spgm_build_database.json'))
-
-    @property
-    def log_file(self):
-        return self.cache('log_file', lambda: self._get_path('log_file', '$BUILD_DIR/spgm_string_generator.log'))
-
-    @property
     def skip_includes(self):
         return self.cache('skip_includes', lambda: self._subst_list('%s\n%s' % (self.declaration_file,  self._get_string('skip_includes')), SubstListType.PATTERN))
 
@@ -228,6 +216,10 @@ class SpgmConfig(SpgmCache):
     @property
     def defines(self):
         return self.cache('defines', lambda: self._normalize_defines_list(self._env['CPPDEFINES']))
+
+    @property
+    def pcpp_bin(self):
+        return self.cache('pcpp_bin', lambda: self._get_path('pcpp_bin', '$PYTHONEXE $PROJECT_DIR/scripts/pcpp_cli.py'))
 
     @property
     def pcpp_defines(self):
