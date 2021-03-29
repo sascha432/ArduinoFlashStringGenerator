@@ -14,11 +14,13 @@ from os import path
 from .types import CompressionType, DefinitionType
 from .file_wrapper import FileWrapper
 from io import TextIOWrapper
+from typing import  Dict
 
 class v2:
 
     class Value(object):
         def __init__(self, value, override=False):
+            self._database = None
             self._value = value
             self._override = override
 
@@ -79,9 +81,22 @@ class v2:
         def has_value(self):
             return self.__getitem__('value')!=None
 
+        @property
+        def database(self):
+            return self._database
+
+        @database.setter
+        def database(self, db):
+            self._database = db
+            value = super().__getitem__('value')
+            if value!=None:
+                self._database.set_value(self, self.name, value)
+
         def __getitem__(self, key):
             if key=='locations':
                 return self.locations
+            if key=='own_value':
+                return super().__getitem__('value')
             if key=='value':
                 val = self._database.get_value(self, self.name)
                 if val!=None:
@@ -92,6 +107,7 @@ class v2:
             if key=='locations':
                 return None
             if key=='value':
+                super().__setitem__(key, val)
                 if not self._database.set_value(self, self.name, val):
                     return
             return super().__setitem__(key, val)
@@ -127,7 +143,7 @@ class DatabaseOutputHelpers(object):
         return new_value
 
     # get unique items that are not static
-    def get_items(self, static=False):
+    def get_items(self, static=False) -> Dict[str,v2.Item]:
         items_out = {}
         for items in self._items_per_file.values():
             for item in items.values():
@@ -163,12 +179,15 @@ class DatabaseOutputHelpers(object):
         return s
 
     # write definition string
-    def write_define(self, file: TextIOWrapper, item: v2.Item):
-        lang = 'default'
-        if not item.has_value:
-            lang += ' (auto)'
+    def write_define(self, file: TextIOWrapper, item: v2.Item, static=False):
         self.write_locations(file, item)
-        print('%-160.65535s // %s' % ('PROGMEM_STRING_DEF' + self.create_define(item), lang), file=file)
+        if static:
+            print('%s%s' % ('PROGMEM_STRING_DEF', self.create_define(item)), file=file)
+        else:
+            lang = 'default'
+            if not item.has_value:
+                lang += ' (auto)'
+            print('%-160.65535s // %s' % ('PROGMEM_STRING_DEF' + self.create_define(item), lang), file=file)
 
     # write auto definition
     def write_auto_init(self, file: TextIOWrapper, item: v2.Item):
@@ -334,7 +353,7 @@ class Database(DatabaseOutputHelpers):
     # assign self to _database of each item
     def _update_items(self, items: dict):
         for item in items.values():
-            item._database = self
+            item.database = self
 
     # load database from file if it is exists
     def _read(self, filename):
@@ -406,24 +425,10 @@ class Database(DatabaseOutputHelpers):
     def is_static(self, find_item):
         if find_item['type']==DefinitionType.DEFINE:
             return True
-
         for items in self._items_per_file.values():
             for item in items.values():
                 if item['type']==DefinitionType.DEFINE and find_item['name']==item['name']:
-                    if self.is_static_old(item)!=True:#DEBUG
-                        raise RuntimeError('is_static error')#DEBUG
                     return True
-
-        if self.is_static_old(find_item)!=False:#DEBUG
-            raise RuntimeError('is_static error')#DEBUG
-        return False
-
-    def is_static_old(self, item):#DEBUG REMOVE
-        if item['type']==DefinitionType.DEFINE:
-            return True
-        for loc in item.locations:
-            if loc.startswith('PROGMEM_STRING_DEF:'):
-                return True
         return False
 
     # returns True if the item is currently in use
@@ -450,7 +455,7 @@ class Database(DatabaseOutputHelpers):
 
         # check if item already exists
         new_item = v2.Item(name, type, source, value, data);
-        new_item._database = self
+        new_item.database = self
         if new_item.index in items:
             self.add_error('item already exists. currently only one item per line may exist', item=new_item, fatal=True) #TODO fix issue
 
