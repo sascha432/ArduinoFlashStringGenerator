@@ -59,7 +59,7 @@ try:
         def on_directive_handle(self, directive, toks, ifpassthru, precedingtoks):
 
             if directive.value=='define' or directive.value=='undef':
-                if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT', 'AUTO_INIT_SPGM']:
+                if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT', 'AUTO_INIT_SPGM', 'AUTO_STRING_DEF']:
                     raise OutputDirective(Action.IgnoreAndPassThrough)
             # elif directive.value=='include':
             #     file = self.tokens_to_string(toks)
