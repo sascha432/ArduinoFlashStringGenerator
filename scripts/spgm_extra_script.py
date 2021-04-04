@@ -22,6 +22,7 @@ import tempfile
 import time
 import click
 import hashlib
+import re
 
 env = None # type: SConsEnvironment
 DefaultEnvironmentCall('Import')("env")
@@ -152,6 +153,24 @@ class SpgmExtraScript(object):
     #     with open(config.definition_file, 'at') as file:
     #         file.write('\n')
 
+
+    def _include_pattern_match(self, filename, pattern=None):
+        if not pattern:
+            return True
+        try:
+            with open(filename, 'rt') as file:
+                line = file.readline()
+                while line:
+                    if re.match(pattern, line):
+                        return True
+                    line = file.readline()
+        except UnicodeDecodeError as e:
+            click.secho('skipping %s cause of %s' % (filename, e), fg='yellow')
+            return False
+        except Exception as e:
+            raise RuntimeError("Exception while checking file %s: %s" % (filename, e));
+        return False
+
     #
     # Run SPGM generator on given target
     #
@@ -165,7 +184,7 @@ class SpgmExtraScript(object):
         files = []
         for node in source:
             file = node.get_abspath()
-            if file!=config.definition_file and not config.is_source_excluded(file):
+            if file!=config.definition_file and not config.is_source_excluded(file) and self._include_pattern_match(file, config.include_pattern):
                 SpgmConfig.debug('source %s' % file)
                 files.append((file, node.get_path()))
 

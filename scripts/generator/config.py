@@ -209,6 +209,10 @@ class SpgmConfig(SpgmCache):
         return self.cache('build_database_dir', lambda: self._get_path('build_database_dir', '$BUILD_DIR/spgm'))
 
     @property
+    def include_pattern(self):
+        return self.cache('include_pattern',  lambda: self._get_string('include_pattern', None))
+
+    @property
     def skip_includes(self):
         return self.cache('skip_includes', lambda: self._subst_list('%s\n%s' % (self.declaration_file,  self._get_string('skip_includes')), SubstListType.PATTERN))
 
