@@ -4,6 +4,41 @@ This tool can generate PROGMEM strings from source code and a database with supp
 
 Instead of writing `PSTR("This is my text!")`, `SPGM(This_is_my_text_)` or `SPGM(This_is_my_text_, "This is my text!"))` is being used. Multiple languages are supported, for example `SPGM(hello_world, "Hello World!", fr_FR: "Bonjour le monde!", de_DE: "Hallo Welt!")`. All strings/translations can be defined directly inside the source code or a centralized header file. The location of definitions and usage is stored as well, to quickly find it in the source code.
 
+
+<!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
+
+<!-- code_chunk_output -->
+
+- [FlashString Generator for Ardunio with internationalization and localization](#flashstring-generator-for-ardunio-with-internationalization-and-localization)
+  - [Change Log](#change-log)
+  - [Requirements](#requirements)
+  - [Installation](#installation)
+    - [Getting the requirements for PIO](#getting-the-requirements-for-pio)
+    - [platformio.ini](#platformioini)
+    - [Required include directories](#required-include-directories)
+    - [Testing the setup](#testing-the-setup)
+  - [Basic Usage](#basic-usage)
+    - [Syntax](#syntax)
+    - [Declaring a PROGMEM string](#declaring-a-progmem-string)
+    - [Defining a PROGMEM string statically](#defining-a-progmem-string-statically)
+    - [Using a PROGMEM string](#using-a-progmem-string)
+    - [Defining a string with (F)SPGM](#defining-a-string-with-fspgm)
+    - [Using AUTO_STRING_DEF](#using-auto_string_def)
+    - [Modifying automatically created strings](#modifying-automatically-created-strings)
+    - [Internationalization and localization](#internationalization-and-localization)
+      - [UTF8 encoding and 8 bit data](#utf8-encoding-and-8-bit-data)
+      - [Using a different language](#using-a-different-language)
+      - [Fallback languages](#fallback-languages)
+    - [More examples](#more-examples)
+    - [spgm_auto_strings.h](#spgm_auto_stringsh)
+  - [Building the example](#building-the-example)
+  - [Performance](#performance)
+    - [Exclude directories or files](#exclude-directories-or-files)
+    - [Preprocess files only if they match a regular expression](#preprocess-files-only-if-they-match-a-regular-expression)
+
+<!-- /code_chunk_output -->
+
+
 ## Change Log
 
 Version 0.1.x is now integrated into for PlatformIO Core
@@ -293,3 +328,24 @@ or
 
 `pio run -t spgm_build -t upload -e example`
 
+## Performance
+
+Since the preprocessor is python and pretty slow, there are 2 otions to improve performance.
+
+### Exclude directories or files
+
+All files or directories matching the source excludes are not preprocessed, even if included directly.
+
+```ini
+custom_spgm_generator.source_excludes =
+    ${platformio.packages_dir}/*
+    $PROJECT_DIR/.pio/*
+```
+
+### Preprocess files only if they match a regular expression
+
+When files are compiled, check the source code for this pattern before preprocessing. This usually gives the best results, but needs to be enabled manually and all macros using the macros in the regular expression, must be added to it.
+
+```ini
+custom_spgm_generator.include_pattern = \W(FSPGM|SPGM|AUTO_STRING_DEF|PROGMEM_STRING_DECL|PROGMEM_STRING_DEF)\W
+```
