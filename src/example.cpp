@@ -22,9 +22,6 @@ PROGMEM_STRING_DEF(test_str, TEST_STRING);
 #include "example_ignore.h"
 
 // storing strings inside the code
-FLASH_STRING_GENERATOR_AUTO_INIT(
-    AUTO_STRING_DEF(AutoInitExample, "test default lang", en_EN: "test en_EN", it_IT: "tests it_IT", fr_FR: "fr_FR")
-);
 
 #define _STRINGIFY(...)                     ___STRINGIFY(__VA_ARGS__)
 #define ___STRINGIFY(...)                   #__VA_ARGS__
@@ -68,6 +65,7 @@ void loop() {
     Serial.print(FSPGM(0));
     Serial.print(FSPGM(1));
     Serial.print(FSPGM(New_string_3, "My NEW String " _STRINGIFY(NEW_STRING_3)));
+    Serial.print(FSPGM(AutoInitExample));
 #if 0
     Serial.print(FSPGM(New_string_unused));
 #endif

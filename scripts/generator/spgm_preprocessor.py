@@ -14,11 +14,12 @@ try:
     class SpgmPreprocessor(Preprocessor):
         def __init__(self, display_info = True):
             Preprocessor.__init__(self)
-            self.define("FLASH_STRINGS_AUTO_INIT 1")
-            self.define("AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)")
-            self.define("SPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
-            self.define("FSPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)")
-            self.define("PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)")
+            self.define('FLASH_STRINGS_AUTO_INIT 1')
+            self.define('AUTO_STRING_DEF(name,  value, ...) AUTO_INIT_SPGM(name,value,##__VA_ARGS__);')
+            self.define('AUTO_INIT_SPGM(name, ...) __INTERNAL_AUTOINIT_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_AUTOINIT_FLASH_STRING_END)')
+            self.define('SPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)')
+            self.define('FSPGM(name, ...) __INTERNAL_SPGM_FLASH_STRING_START(#name,__VA_ARGS__,__INTERNAL_SPGM_FLASH_STRING_END)')
+            self.define('PROGMEM_STRING_DEF(name, value) __INTERNAL_DEFINE_FLASH_STRING_START(#name,value,__INTERNAL_DEFINE_FLASH_STRING_END)')
             self._skip_includes = []
             self._items = []
             # self._include_once = []
@@ -59,7 +60,7 @@ try:
         def on_directive_handle(self, directive, toks, ifpassthru, precedingtoks):
 
             if directive.value=='define' or directive.value=='undef':
-                if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'FLASH_STRING_GENERATOR_AUTO_INIT', 'AUTO_INIT_SPGM', 'AUTO_STRING_DEF']:
+                if toks[0].type=='CPP_ID' and toks[0].value in ['SPGM', 'FSPGM', 'PROGMEM_STRING_DEF', 'AUTO_INIT_SPGM', 'AUTO_STRING_DEF']:
                     raise OutputDirective(Action.IgnoreAndPassThrough)
             # elif directive.value=='include':
             #     file = self.tokens_to_string(toks)

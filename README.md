@@ -202,18 +202,16 @@ If the same name is defined multiple times, a notice is used while running the t
 
 ### Using AUTO_STRING_DEF
 
-This works like `(F)SPGM` and can be used to store strings in a centralized location. Unlike `PROGMEM_STRING_DECL/PROGMEM_STRING_DEF`, strings are declared and defined during compilation.
+This works like `(F)SPGM` and can be used to store strings in a centralized location and act as a database for all strings. Unlike `PROGMEM_STRING_DECL/PROGMEM_STRING_DEF`, strings are declared and defined during compilation.
 
-Different languages are supported as well.
+Different languages are supported as well. The file should be always included in a header and the source code. It can act as a centralized database.
 
-`AUTO_STRING_DEF` required to be wrapped with `FLASH_STRING_GENERATOR_AUTO_INIT()`
+During compilation the macro is defined as `AUTO_STRING_DEF(name, ...) PROGMEM_STRING_DECL`(name); and if used in header files, pay attention to the linkage. PROGMEM strings are linked as C by default.
 
 ```cpp
-FLASH_STRING_GENERATOR_AUTO_INIT(
-    AUTO_STRING_DEF(ping_monitor_response, "%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms")
-    AUTO_STRING_DEF(ping_monitor_end_response, "Total answer from %s sent %d recevied %d time %ld ms")
-    AUTO_STRING_DEF(CURRENCY, "%.2f", en_US: "$%.2f", ch;es;fr;de;it: "%.2fEUR")
-);
+AUTO_STRING_DEF(ping_monitor_response, "%d bytes from %s: icmp_seq=%d ttl=%d time=%ld ms")
+AUTO_STRING_DEF(ping_monitor_end_response, "Total answer from %s sent %d recevied %d time %ld ms")
+AUTO_STRING_DEF(CURRENCY, "%.2f", en_US: "$%.2f", ch;es;fr;de;it: "%.2fEUR")
 ```
 
 ### Modifying automatically created strings
@@ -347,5 +345,5 @@ custom_spgm_generator.source_excludes =
 When files are compiled, check the source code for this pattern before preprocessing. This usually gives the best results, but needs to be enabled manually and all macros using the macros in the regular expression, must be added to it.
 
 ```ini
-custom_spgm_generator.include_pattern = \W(FSPGM|SPGM|AUTO_STRING_DEF|PROGMEM_STRING_DECL|PROGMEM_STRING_DEF)\W
+custom_spgm_generator.include_pattern = '.*[\W\S](FSPGM|SPGM|AUTO_STRING_DEF|PROGMEM_STRING_DECL|PROGMEM_STRING_DEF)[\W\S]'
 ```

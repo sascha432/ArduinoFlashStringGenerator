@@ -23,18 +23,7 @@ class __FlashStringHelper;
 #define PSPGM(name, ...)                                (PGM_P)(SPGM(name))
 #endif
 
-#if FLASH_STRINGS_AUTO_INIT
-#define AUTO_STRING_DEF(...)                            AUTO_INIT_SPGM(__VA_ARGS__),
-#define FLASH_STRING_GENERATOR_AUTO_INIT(...) \
-    static bool __flash_string_generator_auto_init_var = []() { \
-        SPGM_P strings[] = { \
-            __VA_ARGS__ nullptr \
-        };
-        return true; \
-    }
-#else
-
-#define AUTO_STRING_DEF(...)
+#ifndef FLASH_STRING_GENERATOR_AUTO_INIT
 #define FLASH_STRING_GENERATOR_AUTO_INIT(...)
 #endif
 

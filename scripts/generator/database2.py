@@ -15,7 +15,7 @@ from .types import CompressionType, DefinitionType
 from .file_wrapper import FileWrapper
 from .config import SpgmConfig
 from io import TextIOWrapper
-from typing import Dict
+from typing import Dict, Generator
 import hashlib
 
 class v2:
@@ -130,6 +130,11 @@ class DatabaseHelpers(object):
             file.write('%s// %s\n' % (indent, ', '.join(item.locations)))
 
     def acquire_lock(database, lock, timeout):
+        if lock=='exit':
+            try:
+                DatabaseHelpers._env.Exit(1)
+            except:
+                sys.exit(1)
         if lock==None:
             return
         timeout = time.monotonic() + timeout
@@ -142,6 +147,11 @@ class DatabaseHelpers(object):
         # print('got lock %u. target=%s' % (id(lock), database._target))
 
     def release_lock(database, lock):
+        if lock=='exit':
+            try:
+                DatabaseHelpers._env.Exit(1)
+            except:
+                sys.exit(1)
         if lock==None:
             return
         # print('releasing lock %u. target=%s' % (id(lock), database._target))
@@ -329,8 +339,16 @@ class Database(DatabaseHelpers):
             msg += '\nitem name: %s source: %s' % (item2.name, item2['source'])
         self._errors.append(msg)
         if fatal:
-            self.print_errors()
-            self._generator._env.Exit(1)
+            try:
+                try:
+                    DatabaseHelpers._script._write_lock.release()
+                except:
+                    pass
+                DatabaseHelpers._script._write_lock = 'exit'
+                self.print_errors()
+                DatabaseHelpers._env.Exit(1)
+            finally:
+                sys.exit(1)
 
     def print_errors(self):
         for error in self._errors:

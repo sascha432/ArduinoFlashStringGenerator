@@ -40,7 +40,7 @@ class Database(object):
                     self._static.append(item.name)
                 if not item.name in self._unique:
                     self._unique[item.name] = {}
-                if item.index in self._unique[item.name]:
+                if item.index in self._unique[item.name] and item['type']!=DefinitionType.AUTO_INIT:
                     # print(item)
                     # print(self._unique[item.name][item.index])
                     print('WARNING! index=%s duplicate target=%s' % (item.index, target_idx))
@@ -183,7 +183,11 @@ if args.create:
         for item in db._unique.values():
             item = list(item.values())[0]
             if not item.name in db._static:
-                print('PROGMEM_STRING_DEF(%s, "%s");' % (item.name, DatabaseHelpers.split_hex(DatabaseHelpers.encode_binary(db.get_value(item.name)))), file=file)
+                # if item['value']:
+                try:
+                    print('PROGMEM_STRING_DEF(%s, "%s");' % (item.name, DatabaseHelpers.split_hex(DatabaseHelpers.encode_binary(db.get_value(item.name)))), file=file)
+                except:
+                    pass
 
         print('created %s' % source)
 

@@ -208,9 +208,12 @@ class SpgmConfig(SpgmCache):
     def build_database_dir(self):
         return self.cache('build_database_dir', lambda: self._get_path('build_database_dir', '$BUILD_DIR/spgm'))
 
+    def replace_regex(self, pattern):
+        return eval("re.compile(%s)" % pattern)
+
     @property
     def include_pattern(self):
-        return self.cache('include_pattern',  lambda: self._get_string('include_pattern', None))
+        return self.cache('include_pattern',  lambda: self.replace_regex(self._get_string('include_pattern', None)))
 
     @property
     def skip_includes(self):

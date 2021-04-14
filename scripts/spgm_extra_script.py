@@ -13,7 +13,7 @@ import sys
 import tempfile
 import subprocess
 import fnmatch
-from generator import SpgmConfig,  Generator, DatabaseHelpers
+from generator import SpgmConfig,  Generator, DatabaseHelpers, SpgmPreprocessor
 import threading
 import generator
 import atexit
@@ -64,6 +64,7 @@ class SpgmExtraScript(object):
                 print('Exception %s' % e)
 
     def __init__(self):
+        self._use_cli = False
         self.verbose = SpgmConfig._verbose
         self._source_files = []
         # self._read_lock = threading.Lock()
@@ -110,6 +111,10 @@ class SpgmExtraScript(object):
     #
     def register_middle_ware(self, env):
         config = SpgmConfig(env)
+        # create definition file if it does not exist
+        if not path.isfile(config.definition_file):
+            with open(config.definition_file, 'wt') as file:
+                print('', file=file)
         def process_node(node: FS.File):
             if node:
                 file = node.srcnode().get_abspath()
@@ -134,13 +139,16 @@ class SpgmExtraScript(object):
     #
     def add_pre_actions(self, env):
         SpgmConfig.debug('spgm_extra_script.add_pre_actions', True)
+        DatabaseHelpers._env = env
+        DatabaseHelpers._script = self
         if self._source_files:
             for node in self._source_files:
                 # add pre actions for every target to be scanned
                 env.AddPreAction(node.get_path() + '.o', self.run_spgm_generator)
                 # add all source files to the requirements of the definition file
                 # to compile it after collection all strings
-                env.Requires(self._auto_strings_target.get_path() + '.o', node.get_path() + '.o')
+                if self._auto_strings_target:
+                    env.Requires(self._auto_strings_target.get_path() + '.o', node.get_path() + '.o')
 
         # env.AddPreAction(env.get("PIOMAINPROG"), spgm_extra_script.run_mainprog)
 
@@ -170,6 +178,27 @@ class SpgmExtraScript(object):
         except Exception as e:
             raise RuntimeError("Exception while checking file %s: %s" % (filename, e));
         return False
+
+    def _create_pcpp(self, config):
+        fcpp = SpgmPreprocessor(False)
+
+        for define, value in config['defines']:
+            SpgmConfig.verbose('define %s=%s' % (define, value))
+            fcpp.define('%s %s' % (define, value))
+
+        for define, value in config['pcpp_defines']:
+            SpgmConfig.verbose('pcpp_defines %s=%s' % (define, value))
+            fcpp.define('%s %s' % (define, value))
+
+        for include in config['include_dirs']:
+            SpgmConfig.verbose('include_dir %s' % include)
+            fcpp.add_path(include)
+
+        for skip_include in config['skip_includes']:
+            SpgmConfig.verbose('skip_include %s' % skip_include)
+            fcpp.add_skip_include(skip_include)
+
+        return fcpp
 
     #
     # Run SPGM generator on given target
@@ -220,15 +249,53 @@ class SpgmExtraScript(object):
                 'skip_includes': config.skip_includes
             }
 
-            # currently the scanner is using a cache that makes it impossible to collect all files
-            # included in a target. without the performance is extremly poor. a project that usually takes 7min to compile
-            # was still running after 2 hours... with cache it takes ~16min
+            pcpp = config.cache('pcpp', lambda: self._create_pcpp(data))
 
-            # if DatabaseHelpers.get_hash(data['target']['files'])==data['target']['hash']:
-            #     SpgmConfig.verbose('no changes detected')
-            # else:
+            if self._use_cli==False:
 
-            if True:
+                source = ''
+                for (absfile, file) in gen.files:
+                    SpgmConfig.verbose('files %s' % absfile)
+                    source += '#include "%s"\n' % absfile
+
+                pcpp.parse(source)
+                pcpp.find_strings()
+
+                items = []
+                for item in pcpp.items:
+                    for location in item.locations:
+                        item_out = {
+                            'source': item.source_str,
+                            'name': item.name,
+                            'type': str(location.definition_type),
+                            'value': item._value,
+                            'auto': item._value,
+                            'data': item._data
+                            # 'i18n': item.i18n.translations
+                        }
+                        items.append(item_out)
+
+                processed_files = sorted(pcpp.files)
+
+                SpgmConfig.verbose('creating output files... %u items from %u files' % (len(items), len(processed_files)))
+
+                gen._database.add_target_files(processed_files, DatabaseHelpers.get_hash(processed_files))
+
+                gen.copy_to_database(items)
+
+                SpgmConfig.debug('creating output files', True)
+
+                num = len(items)
+                include_counter = len(processed_files)
+
+                gen.create_output_header(config.declaration_file, config.declaration_include_file)
+                gen.create_output_define(config.definition_file)
+                gen.create_output_static(config.statics_file)
+                gen.create_output_auto_defined(config.auto_defined_file)
+
+                pcpp.cleanup()
+
+            else:
                 # DatabaseHelpers.acquire_lock(gen._database, self._write_lock, 300)
                 try:
                     tmpfile = None
@@ -246,6 +313,9 @@ class SpgmExtraScript(object):
                         tmpfile = file.name
                         SpgmExtraScript.temporary_files_add(tmpfile)
 
+                        for file in gen.files:
+                            click.echo('Preprocessing %s' % (file[1]))
+
                     args = config.pcpp_bin.split(' ')
                     args += ['--file', tmpfile, '--cache', cachefile]
                     if SpgmConfig._verbose:
@@ -262,9 +332,7 @@ class SpgmExtraScript(object):
                         result = proc.returncode
 
                     if result!=0:
-                        time.sleep(1)
-                        print(errs, file=sys.stderr)
-                        raise RuntimeError('processor failed with exit code %u. cmd:\n%s\n' % (result, ' '.join(args)))
+                        gen._database.add_error('processor failed with exit code %u. cmd:\n%s\nstdout: %s\nstderr: %s' % (result, ' '.join(args), str(outs), str(errs)), fatal=True)
 
                     with open(tmpfile, 'rt') as file:
                         output = json.loads(file.read())
@@ -299,13 +367,6 @@ class SpgmExtraScript(object):
 
                         num = len(output['items'])
                         include_counter = len(output['files'])
-
-                        SpgmConfig.debug('output_language %s' % gen.language)
-                        SpgmConfig.debug('declaration_file %s' % config.declaration_file)
-                        SpgmConfig.debug('definition_file %s' % config.definition_file)
-                        SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
-
-                        # create output files
 
                         def get_tmp():
                             with tempfile.NamedTemporaryFile('wt', delete=False) as file:
@@ -349,11 +410,6 @@ class SpgmExtraScript(object):
                         gen.create_output_auto_defined(tmp1)
                         compare_move_tmpfile(tmp1, config.auto_defined_file)
 
-                        # gen.create_output_header(config.declaration_file, config.declaration_include_file)
-                        # gen.create_output_define(config.definition_file)
-                        # gen.create_output_static(config.statics_file)
-                        # gen.create_output_auto_defined(config.auto_defined_file)
-
                         SpgmConfig.debug_verbose('created %u items from %u include files in %.3f seconds' % (num, include_counter, time.monotonic() - start_time))
 
                     finally:
@@ -363,6 +419,11 @@ class SpgmExtraScript(object):
                 finally:
                     SpgmExtraScript.temporary_files_unlink(tmpfile)
                     SpgmExtraScript.temporary_files_unlink(cachefile)
+
+            SpgmConfig.debug('output_language %s' % gen.language)
+            SpgmConfig.debug('declaration_file %s' % config.declaration_file)
+            SpgmConfig.debug('definition_file %s' % config.definition_file)
+            SpgmConfig.debug('declaration_include_file %s' % config.declaration_include_file)
 
         finally:
             DatabaseHelpers.release_lock(self, self._write_lock)
